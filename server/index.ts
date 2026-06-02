@@ -29,12 +29,12 @@ app.use(express.urlencoded({ extended: false }));
 const MStore = MemoryStore(session);
 app.use(
   session({
-    name: "__Host-vcny-sid",
+    name: "vcny-sid",
     secret: process.env.SESSION_SECRET || "vcny-helpdesk-secret-2026",
     resave: false,
     saveUninitialized: false,
     store: new MStore({ checkPeriod: 86400000 }),
-    cookie: { maxAge: 86400000 * 7, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/" }, // 7 days
+    cookie: { maxAge: 86400000 * 7, sameSite: "lax", path: "/" }, // 7 days
   })
 );
 

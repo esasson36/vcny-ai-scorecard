@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { useQuery } from "@tanstack/react-query";
@@ -9,13 +10,19 @@ import AdminPanel from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 
 function AdminRoute() {
+  // Track login state locally so the panel shows immediately on success
+  // without depending on a cookie round-trip re-check
+  const [loggedIn, setLoggedIn] = useState(false);
+
   const { data, isLoading, refetch } = useQuery<{ admin: boolean }>({
     queryKey: ["/api/admin/me"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
   });
 
-  if (isLoading) {
+  const isAdmin = loggedIn || data?.admin === true;
+
+  if (isLoading && !loggedIn) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-4 h-4 border-2 border-foreground border-t-transparent rounded-full animate-spin" />
@@ -23,11 +30,11 @@ function AdminRoute() {
     );
   }
 
-  if (!data?.admin) {
-    return <AdminLogin onLogin={() => refetch()} />;
+  if (!isAdmin) {
+    return <AdminLogin onLogin={() => { setLoggedIn(true); refetch(); }} />;
   }
 
-  return <AdminPanel onLogout={() => refetch()} />;
+  return <AdminPanel onLogout={() => { setLoggedIn(false); refetch(); }} />;
 }
 
 export default function App() {
