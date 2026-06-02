@@ -32,6 +32,40 @@ export default function AdminPanel({ onLogout }: Props) {
     onSuccess: onLogout,
   });
 
+  function exportCSV() {
+    const TOOLS_MAP: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
+    const rows: string[][] = [[
+      "Name", "Team", "Date", "Tool",
+      "Frequency", "Time Saved", "Impact", "Adoption",
+      "Output Volume", "Score", "Max", "Percent", "Grade", "Recommendation",
+      "Use Cases", "Challenges"
+    ]];
+    subs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      Object.keys(tools).forEach(t => {
+        const ts = tools[t];
+        const sc = calcScore(ts);
+        const g = pctToGrade(sc.pct);
+        rows.push([
+          sub.name, sub.team, new Date(sub.timestamp).toLocaleDateString(),
+          TOOLS_MAP[t] ?? t,
+          LABELS.freq[ts.freq], LABELS.time[ts.time], LABELS.impact[ts.impact], LABELS.adopt[ts.adopt],
+          ts.outputVolume !== undefined ? String(ts.outputVolume) : "",
+          String(sc.total), String(sc.max), sc.pct + "%", g, gradeAction(g),
+          sub.useCases ?? "", sub.challenges ?? ""
+        ]);
+      });
+    });
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vcny-ai-scorecard-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/submissions/${id}`, {}); },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/submissions"] }); setView("dashboard"); },
@@ -82,6 +116,15 @@ export default function AdminPanel({ onLogout }: Props) {
             >
               <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />
               Refresh
+            </button>
+            <button
+              data-testid="button-export-csv"
+              onClick={exportCSV}
+              disabled={subs.length === 0}
+              className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5 disabled:opacity-40"
+              style={{ fontFamily: "'Geist Mono', monospace" }}
+            >
+              ↓ CSV
             </button>
             <button
               data-testid="button-logout"
