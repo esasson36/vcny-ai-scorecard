@@ -25,6 +25,7 @@ export default function AdminLogin({ onLogin }: Props) {
           <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>VCNY · AI Scorecard</p>
           <h1 className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>Admin access</h1>
           <p className="text-sm text-muted-foreground mt-1">Sign in to view submissions</p>
+          <a href="/#/" className="text-xs text-muted-foreground underline underline-offset-2 mt-2 inline-block hover:text-foreground transition-colors">← Back to form</a>
         </div>
 
         {mutation.isError && (

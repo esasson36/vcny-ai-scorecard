@@ -106,6 +106,7 @@ export default function AdminPanel({ onLogout }: Props) {
             <h1 className="text-3xl font-medium leading-none tracking-tight" style={{ fontFamily: "'Fraunces', serif" }}>
               {view === "dashboard" ? "Admin dashboard" : (activeSub?.name ?? "Submission")}
             </h1>
+            <a href="/#/" className="text-xs text-muted-foreground underline underline-offset-2 mt-1 inline-block hover:text-foreground transition-colors">← Back to form</a>
           </div>
           <div className="flex items-center gap-2">
             <button
