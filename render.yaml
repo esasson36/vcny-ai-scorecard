@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: vcny-ai-scorecard
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: NODE_ENV=production node dist/index.cjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true

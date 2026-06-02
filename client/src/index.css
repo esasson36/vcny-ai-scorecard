@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Warm parchment / editorial palette matching the original design */
+    --background: 40 30% 97%;
+    --foreground: 0 0% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+
+    --primary: 0 0% 10%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 20% 96%;
+    --secondary-foreground: 0 0% 10%;
+
+    --muted: 40 15% 94%;
+    --muted-foreground: 0 0% 42%;
+
+    --accent: 40 15% 94%;
+    --accent-foreground: 0 0% 10%;
+
+    --destructive: 0 65% 40%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 38 20% 86%;
+    --input: 38 25% 82%;
+    --ring: 0 0% 10%;
+
+    --radius: 0.25rem;
+
+    /* Tool brand colors */
+    --chatgpt: #10a37f;
+    --chatgpt-soft: #e6f5f0;
+    --chatgpt-text: #085041;
+    --claude: #d97757;
+    --claude-soft: #fbeee4;
+    --claude-text: #712b13;
+    --perplexity: #20808d;
+    --perplexity-soft: #e0f0f2;
+    --perplexity-text: #0c447c;
+
+    --good: #1d9e75;
+    --warn: #ba7517;
+    --bad: #a32d2d;
+  }
+}
+
+@layer base {
+  * { @apply border-border; box-sizing: border-box; }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Geist', 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Tool pill variants */
+.pill-cgt { background: var(--chatgpt-soft); color: var(--chatgpt-text); }
+.pill-cla { background: var(--claude-soft); color: var(--claude-text); }
+.pill-per { background: var(--perplexity-soft); color: var(--perplexity-text); }
+
+/* Tool section border */
+.tool-section-cgt { border-left-color: var(--chatgpt); }
+.tool-section-cla { border-left-color: var(--claude); }
+.tool-section-per { border-left-color: var(--perplexity); }
+
+/* Grade colors */
+.grade-A { color: var(--good); }
+.grade-B { color: #639922; }
+.grade-C { color: var(--warn); }
+.grade-D { color: var(--claude); }
+.grade-F { color: var(--bad); }
+
+/* Range slider — minimal cross-browser reset */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: hsl(var(--input));
+  outline: none;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: hsl(var(--foreground));
+  cursor: pointer;
+}
+input[type=range]::-moz-range-thumb {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: hsl(var(--foreground));
+  border: none;
+  cursor: pointer;
+}
