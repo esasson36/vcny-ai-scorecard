@@ -55,3 +55,56 @@ export function gradeAction(g: string): string {
 export function gradeClass(g: string): string {
   return `grade-${g}`;
 }
+
+// Coach suggestions per team for C/D/F scorers
+export const COACH_SUGGESTIONS: Record<string, string[]> = {
+  Marketing: [
+    "Use ChatGPT to draft campaign briefs, social copy, and product descriptions",
+    "Try Perplexity for quick competitive research and trend spotting",
+    "Use Claude to rewrite or improve existing copy with specific tone guidelines",
+  ],
+  Merchandising: [
+    "Use ChatGPT to draft vendor emails, PO summaries, and product notes",
+    "Try Perplexity to research supplier alternatives and market pricing",
+    "Use Claude to summarize long vendor contracts or spec sheets",
+  ],
+  Design: [
+    "Use ChatGPT to write alt text, product naming, and design briefs",
+    "Try Perplexity to research design trends and competitor aesthetics",
+    "Use Claude to turn rough design notes into structured creative briefs",
+  ],
+  Sales: [
+    "Use ChatGPT to draft outreach emails, follow-ups, and pitch decks",
+    "Try Perplexity to research accounts and find talking points before calls",
+    "Use Claude to summarize meeting notes and generate next-step action items",
+  ],
+  Operations: [
+    "Use ChatGPT to draft SOPs, process documentation, and checklists",
+    "Try Perplexity to research logistics providers and shipping solutions",
+    "Use Claude to summarize long reports or extract key action items",
+  ],
+  Finance: [
+    "Use ChatGPT to draft financial summaries and budget narratives",
+    "Try Perplexity to quickly look up market rates and benchmarks",
+    "Use Claude to review and simplify complex contracts or financial docs",
+  ],
+  Warehouse: [
+    "Use ChatGPT to draft shift handoff notes and inventory summaries",
+    "Try Perplexity to look up product specs and shipping regulations",
+    "Use Claude to turn raw data exports into readable summary reports",
+  ],
+  Executive: [
+    "Use ChatGPT to draft board updates, memos, and executive summaries",
+    "Try Perplexity for quick market intelligence and news monitoring",
+    "Use Claude to summarize lengthy reports into 1-page executive briefs",
+  ],
+  Other: [
+    "Use ChatGPT to draft emails, summarize documents, and brainstorm ideas",
+    "Try Perplexity for research tasks instead of manual Googling",
+    "Use Claude for editing, rewriting, and improving existing text",
+  ],
+};
+
+export function getCoachSuggestions(team: string): string[] {
+  return COACH_SUGGESTIONS[team] ?? COACH_SUGGESTIONS.Other;
+}

@@ -6,11 +6,17 @@ import {
   TOOLS, TOOL_KEYS, LABELS, type ToolKey, type MetricKey,
   calcScore, pctToGrade, gradeAction, gradeClass,
 } from "@/lib/scorecard";
-import { LogOut, RefreshCw, Trash2, ArrowLeft } from "lucide-react";
+import { LogOut, RefreshCw, Trash2, ArrowLeft, Sun, Moon, Printer } from "lucide-react";
+import { Line } from "react-chartjs-2";
+import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
+import { useTheme } from "@/lib/theme";
+import { getCoachSuggestions } from "@/lib/scorecard";
+
+Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 import { cn } from "@/lib/utils";
 
 interface Props { onLogout: () => void; }
-type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard";
+type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams";
 
 function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
@@ -27,6 +33,7 @@ function getMonth(sub: Submission) {
 }
 
 export default function AdminPanel({ onLogout }: Props) {
+  const { theme, toggle: toggleTheme } = useTheme();
   const [view, setView] = useState<View>("dashboard");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activePerson, setActivePerson] = useState<string | null>(null);
@@ -149,6 +156,7 @@ export default function AdminPanel({ onLogout }: Props) {
     person: activePerson ?? "Person",
     compare: "Month comparison",
     leaderboard: "Leaderboard",
+    teams: "Teams",
   };
 
   return (
@@ -174,6 +182,11 @@ export default function AdminPanel({ onLogout }: Props) {
               style={{ fontFamily: "'Geist Mono', monospace" }}>
               ↓ CSV
             </button>
+            <button onClick={toggleTheme}
+              className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"
+              style={{ fontFamily: "'Geist Mono', monospace" }}>
+              {theme === "dark" ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+            </button>
             <button data-testid="button-logout" onClick={() => logoutMutation.mutate()}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"
               style={{ fontFamily: "'Geist Mono', monospace" }}>
@@ -183,14 +196,14 @@ export default function AdminPanel({ onLogout }: Props) {
         </div>
 
         {/* Nav tabs */}
-        {(["dashboard", "compare", "leaderboard"] as View[]).includes(view) && (
-          <div className="flex gap-1 mb-6 border-b border-border pb-0">
-            {(["dashboard", "leaderboard", "compare"] as const).map(v => (
+        {(["dashboard", "compare", "leaderboard", "teams"] as View[]).includes(view) && (
+          <div className="flex gap-1 mb-6 border-b border-border pb-0 overflow-x-auto">
+            {(["dashboard", "leaderboard", "teams", "compare"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
-                className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-2 border-b-2 -mb-px transition-colors",
+                className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap",
                   view === v ? "border-foreground text-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground"
                 )} style={{ fontFamily: "'Geist Mono', monospace" }}>
-                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : "Compare months"}
+                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : "Compare"}
               </button>
             ))}
           </div>
@@ -226,6 +239,10 @@ export default function AdminPanel({ onLogout }: Props) {
             allSubs={subs} allMonths={allMonths}
             onOpenPerson={name => { setActivePerson(name); setView("person"); }}
           />
+        )}
+
+        {view === "teams" && (
+          <TeamsView allSubs={subs} allMonths={allMonths} />
         )}
 
         {view === "detail" && activeSub && (
@@ -638,9 +655,15 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
 
   return (
     <div>
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm border border-border rounded-sm px-3 py-1.5 mb-5 hover:border-foreground transition-colors">
-        <ArrowLeft className="w-3.5 h-3.5" /> Back
-      </button>
+      <div className="flex items-center gap-2 mb-5">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back
+        </button>
+        <button onClick={() => window.print()}
+          className="flex items-center gap-1.5 text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors ml-auto">
+          <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+        </button>
+      </div>
       <div className="bg-card border border-border rounded-sm p-6">
         <h2 className="text-xl font-medium mb-0.5" style={{ fontFamily: "'Fraunces', serif" }}>{sub.name}</h2>
         <p className="text-sm text-muted-foreground mb-5">
@@ -659,7 +682,17 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
                   <span className={cn("text-[28px] font-medium leading-none", gradeClass(g))} style={{ fontFamily: "'Fraunces', serif" }}>{g}</span>
                 </div>
               </div>
-              <div className="border-l-[3px] border-foreground pl-3 py-2 bg-[#fbfaf6] text-sm mb-3 rounded-r-sm">{gradeAction(g)}</div>
+              <div className="border-l-[3px] border-foreground pl-3 py-2 bg-[#fbfaf6] dark:bg-secondary/40 text-sm mb-3 rounded-r-sm">{gradeAction(g)}</div>
+              {["C","D","F"].includes(g) && (
+                <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/40 rounded-sm">
+                  <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-400 mb-2 uppercase tracking-wider">Coaching suggestions for {sub.team}</p>
+                  <ul className="space-y-1">
+                    {getCoachSuggestions(sub.team).map((s, i) => (
+                      <li key={i} className="text-xs text-yellow-900 dark:text-yellow-300 flex gap-2"><span>→</span>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {(["freq", "time", "impact", "adopt"] as MetricKey[]).map(m => (
                 <div key={m} className="flex justify-between py-1 text-sm">
                   <span className="text-muted-foreground">{{ freq: "Frequency", time: "Time saved/week", impact: "Impact", adopt: "Adoption depth" }[m]}</span>
@@ -912,6 +945,191 @@ function ResponseRate({ subs, headcounts, onSetHeadcount }: {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Teams View ────────────────────────────────────────────────────────────────
+function TeamsView({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: string[] }) {
+  const [selectedMonth, setSelectedMonth] = useState<string>(allMonths[0] ?? "all");
+
+  const subs = selectedMonth === "all" ? allSubs : allSubs.filter(s => getMonth(s) === selectedMonth);
+
+  // Group by team
+  const teams = [...new Set(subs.map(s => s.team))].sort();
+
+  function teamStats(team: string) {
+    const tsubs = subs.filter(s => s.team === team);
+    const pcts: number[] = [];
+    const toolPcts: Record<string, number[]> = {};
+    const useCases: string[] = [];
+    const challenges: string[] = [];
+    tsubs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      Object.keys(tools).forEach(t => {
+        const p = calcScore(tools[t]).pct;
+        pcts.push(p);
+        if (!toolPcts[t]) toolPcts[t] = [];
+        toolPcts[t].push(p);
+      });
+      if (sub.useCases) useCases.push(sub.useCases);
+      if (sub.challenges) challenges.push(sub.challenges);
+    });
+    const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
+    const toolGrades: Record<string, string> = {};
+    Object.keys(toolPcts).forEach(t => {
+      const a = Math.round(toolPcts[t].reduce((a, b) => a + b, 0) / toolPcts[t].length);
+      toolGrades[t] = pctToGrade(a);
+    });
+    return { tsubs, avg, grade: pctToGrade(avg), toolGrades, useCases, challenges };
+  }
+
+  if (teams.length === 0) return (
+    <div className="bg-card border border-border rounded-sm p-8 text-center text-sm text-muted-foreground">
+      No submissions yet.
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Month selector */}
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <span className="text-xs text-muted-foreground uppercase tracking-wider" style={{ fontFamily: "'Geist Mono', monospace" }}>Month</span>
+        <div className="flex gap-1.5 flex-wrap">
+          <button onClick={() => setSelectedMonth("all")}
+            className={cn("text-[11px] px-3 py-1 rounded-full border transition-colors",
+              selectedMonth === "all" ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground"
+            )} style={{ fontFamily: "'Geist Mono', monospace" }}>All</button>
+          {allMonths.map(m => (
+            <button key={m} onClick={() => setSelectedMonth(m)}
+              className={cn("text-[11px] px-3 py-1 rounded-full border transition-colors",
+                selectedMonth === m ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground"
+              )} style={{ fontFamily: "'Geist Mono', monospace" }}>{fmtMonth(m)}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Trend chart */}
+      {allMonths.length > 1 && <TrendChart allSubs={allSubs} allMonths={allMonths} />}
+
+      {/* Team cards */}
+      <div className="space-y-4 mt-5">
+        {teams.map(team => {
+          const { tsubs, avg, grade, toolGrades, useCases, challenges } = teamStats(team);
+          return (
+            <div key={team} className="bg-card border border-border rounded-sm p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="text-base font-semibold">{team}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{tsubs.length} submission{tsubs.length !== 1 ? "s" : ""}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground font-mono">{avg}%</span>
+                  <span className={cn("text-2xl font-medium leading-none", gradeClass(grade))} style={{ fontFamily: "'Fraunces', serif" }}>{grade}</span>
+                </div>
+              </div>
+
+              {/* Tool grades */}
+              <div className="flex gap-2 flex-wrap mb-3">
+                {Object.keys(toolGrades).map(t => (
+                  <span key={t} className={cn("pill-" + t, "text-xs font-semibold px-2.5 py-0.5 rounded-full")}>
+                    {TOOLS[t]} · {toolGrades[t]}
+                  </span>
+                ))}
+              </div>
+
+              {/* Use cases */}
+              {useCases.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1" style={{ fontFamily: "'Geist Mono', monospace" }}>Use cases mentioned</p>
+                  <ul className="space-y-0.5">
+                    {useCases.slice(0, 3).map((u, i) => <li key={i} className="text-xs text-foreground/80 truncate">→ {u}</li>)}
+                    {useCases.length > 3 && <li className="text-xs text-muted-foreground">+{useCases.length - 3} more</li>}
+                  </ul>
+                </div>
+              )}
+
+              {/* Challenges */}
+              {challenges.length > 0 && (
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1" style={{ fontFamily: "'Geist Mono', monospace" }}>Challenges</p>
+                  <ul className="space-y-0.5">
+                    {challenges.slice(0, 2).map((c, i) => <li key={i} className="text-xs text-foreground/80 truncate">→ {c}</li>)}
+                    {challenges.length > 2 && <li className="text-xs text-muted-foreground">+{challenges.length - 2} more</li>}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Trend Chart ───────────────────────────────────────────────────────────────
+function TrendChart({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: string[] }) {
+  const months = [...allMonths].sort();
+
+  function toolAvgByMonth(tool: string, month: string) {
+    const msubs = allSubs.filter(s => getMonth(s) === month);
+    const pcts: number[] = [];
+    msubs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      if (tools[tool]) pcts.push(calcScore(tools[tool]).pct);
+    });
+    return pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+  }
+
+  const TOOL_COLORS: Record<string, string> = {
+    cgt: "#10a37f",
+    cla: "#d97757",
+    per: "#20808d",
+  };
+
+  const datasets = TOOL_KEYS.map(t => ({
+    label: TOOLS[t],
+    data: months.map(m => toolAvgByMonth(t, m)),
+    borderColor: TOOL_COLORS[t],
+    backgroundColor: TOOL_COLORS[t] + "22",
+    tension: 0.3,
+    pointRadius: 4,
+    pointHoverRadius: 6,
+    spanGaps: true,
+  }));
+
+  const data = {
+    labels: months.map(fmtMonth),
+    datasets,
+  };
+
+  const options = {
+    responsive: true,
+    plugins: {
+      legend: { position: "bottom" as const, labels: { boxWidth: 12, font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: (ctx: any) => `${ctx.dataset.label}: ${ctx.parsed.y}% (${pctToGrade(ctx.parsed.y)})`,
+        },
+      },
+    },
+    scales: {
+      y: {
+        min: 0,
+        max: 100,
+        ticks: { callback: (v: any) => v + "%" },
+        grid: { color: "rgba(128,128,128,0.1)" },
+      },
+      x: { grid: { display: false } },
+    },
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-5">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4" style={{ fontFamily: "'Geist Mono', monospace" }}>
+        Company avg score — month over month
+      </h3>
+      <Line data={data} options={options} />
     </div>
   );
 }

@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { TOOLS, TOOL_KEYS, TEAMS, LABELS, type ToolKey, type MetricKey } from "@/lib/scorecard";
-import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
+import { CheckCircle2, Loader2, AlertCircle, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 interface ToolScores {
@@ -12,6 +13,7 @@ interface ToolScores {
 const DEFAULT_SCORES: ToolScores = { freq: 3, time: 2, impact: 3, adopt: 2 };
 
 export default function SubmitPage() {
+  const { theme, toggle: toggleTheme } = useTheme();
   const [name, setName] = useState("");
   const [team, setTeam] = useState("");
   const [selected, setSelected] = useState<Record<ToolKey, boolean>>({ cgt: false, cla: false, per: false });
@@ -100,7 +102,12 @@ export default function SubmitPage() {
             <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1" style={{ fontFamily: "'Geist Mono', monospace" }}>VCNY · AI Scorecard</p>
             <h1 className="text-3xl font-medium leading-none tracking-tight" style={{ fontFamily: "'Fraunces', serif" }}>Your AI tool feedback</h1>
           </div>
-          <a href="/#/admin" className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors" style={{ fontFamily: "'Geist Mono', monospace" }}>Admin</a>
+          <div className="flex items-center gap-2">
+            <button onClick={toggleTheme} className="text-[11px] border-[1.5px] border-foreground/30 px-2 py-1.5 rounded-sm hover:border-foreground transition-colors">
+              {theme === "dark" ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+            </button>
+            <a href="/#/admin" className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors" style={{ fontFamily: "'Geist Mono', monospace" }}>Admin</a>
+          </div>
         </div>
 
         {/* Your details */}
