@@ -463,7 +463,7 @@ function CompareView({ allSubs, allMonths, compareA, compareB, onChangeA, onChan
           <div key={label as string} className="bg-card border border-border rounded-sm p-4">
             <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>Month {label as string}</p>
             <select value={val as string} onChange={e => (onChange as (m: string) => void)(e.target.value)}
-              className="w-full px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-white focus:border-foreground focus:outline-none">
+              className="w-full px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none">
               {allMonths.map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}
             </select>
             <p className="text-xs text-muted-foreground mt-2">
@@ -705,7 +705,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
                   <input data-testid={`input-ov-${t}`} type="number" min={0} max={5}
                     value={ovValues[t] ?? ""}
                     onChange={e => setOvValues(prev => ({ ...prev, [t]: e.target.value }))}
-                    className="w-20 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-white focus:border-foreground focus:outline-none" />
+                    className="w-20 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
                   <button data-testid={`button-save-ov-${t}`}
                     onClick={() => { const v = parseInt(ovValues[t]); if (!isNaN(v) && v >= 0 && v <= 5) onSaveOV(t, v); }}
                     disabled={isSavingOV}
@@ -731,7 +731,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
         )}
         <div className="mt-6 pt-5 border-t border-border">
           <button data-testid="button-delete" onClick={() => onDelete(sub.id)}
-            className="text-sm border border-red-200 text-red-700 rounded-sm px-3 py-1.5 hover:border-red-500 hover:bg-red-50 transition-colors">
+            className="text-sm border border-red-200 text-red-700 rounded-sm px-3 py-1.5 hover:border-red-500 hover:bg-red-900/20 dark:hover:bg-red-900/20 transition-colors">
             Delete submission
           </button>
         </div>
@@ -930,7 +930,7 @@ function ResponseRate({ subs, headcounts, onSetHeadcount }: {
                     onChange={e => setDraft(e.target.value)}
                     onBlur={() => { onSetHeadcount(team, parseInt(draft) || 0); setEditing(null); }}
                     onKeyDown={e => { if (e.key === "Enter") { onSetHeadcount(team, parseInt(draft) || 0); setEditing(null); } }}
-                    className="w-10 text-center border border-border rounded-sm bg-white focus:border-foreground focus:outline-none px-1"
+                    className="w-10 text-center border border-border rounded-sm bg-background text-foreground focus:border-foreground focus:outline-none px-1"
                     autoFocus
                   />
                 ) : (

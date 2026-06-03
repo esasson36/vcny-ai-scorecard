@@ -122,7 +122,7 @@ export default function SubmitPage() {
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Sarah Chen"
-                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-white focus:border-foreground focus:outline-none transition-colors"
+                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
               />
             </div>
             <div>
@@ -131,7 +131,7 @@ export default function SubmitPage() {
                 data-testid="select-team"
                 value={team}
                 onChange={e => setTeam(e.target.value)}
-                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-white focus:border-foreground focus:outline-none transition-colors"
+                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
               >
                 <option value="">Choose team...</option>
                 {TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
@@ -172,7 +172,7 @@ export default function SubmitPage() {
               value={useCases}
               onChange={e => setUseCases(e.target.value)}
               placeholder="e.g. Drafting product descriptions, summarizing reports, brainstorming campaigns..."
-              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-white focus:border-foreground focus:outline-none transition-colors resize-y min-h-[60px]"
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors resize-y min-h-[60px]"
             />
           </div>
           <div>
@@ -182,19 +182,19 @@ export default function SubmitPage() {
               value={challenges}
               onChange={e => setChallenges(e.target.value)}
               placeholder="e.g. Hard to remember good prompts, output too generic..."
-              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-white focus:border-foreground focus:outline-none transition-colors resize-y min-h-[60px]"
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors resize-y min-h-[60px]"
             />
           </div>
         </div>
 
         {dupWarning && (
-          <div className="flex items-start gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-yellow-50 border border-yellow-200 text-yellow-800">
+          <div className="flex items-start gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/40 text-yellow-800 dark:text-yellow-300">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             {dupWarning}
           </div>
         )}
         {error && (
-          <div className="flex items-center gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-red-50 border border-red-200 text-red-700">
+          <div className="flex items-center gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-400">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
@@ -230,7 +230,7 @@ function ToolSection({ toolKey, scores, onChange }: {
   ];
 
   return (
-    <div className={cn("border-l-[3px] pl-4 pr-4 py-3.5 mb-4 bg-[#fbfaf6] rounded-r-sm tool-section-" + toolKey)}>
+    <div className={cn("border-l-[3px] pl-4 pr-4 py-3.5 mb-4 bg-card rounded-r-sm tool-section-" + toolKey)}>
       <span className={cn("pill-" + toolKey, "inline-block text-xs font-semibold px-3 py-1 rounded-full mb-3")}>{TOOLS[toolKey]}</span>
       <div className="space-y-2.5">
         {metrics.map(({ key, label }) => (

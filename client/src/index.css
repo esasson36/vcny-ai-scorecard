@@ -115,6 +115,14 @@ input[type=range] {
   border: none;
   padding: 0;
 }
+
+/* Dark mode for native selects */
+.dark select {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--input));
+  color-scheme: dark;
+}
 input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px; height: 16px;
