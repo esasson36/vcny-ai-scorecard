@@ -4,8 +4,8 @@ import { storage } from "./storage";
 import { submitBodySchema } from "@shared/schema";
 import { z } from "zod";
 
-const ADMIN_USER = "elie";
-const ADMIN_PASS = "VCNYAI";
+let ADMIN_USER = "elie";
+let ADMIN_PASS = "VCNYAI";
 
 export function registerRoutes(httpServer: Server, app: Express) {
   // ── Admin auth ──────────────────────────────────────────────────────────
@@ -21,6 +21,19 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
   app.post("/api/admin/logout", (req, res) => {
     req.session.destroy(() => res.json({ ok: true }));
+  });
+
+  app.post("/api/admin/change-password", requireAdmin, (req, res) => {
+    const { currentPassword, newUsername, newPassword } = req.body ?? {};
+    if (currentPassword !== ADMIN_PASS) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+    if (!newPassword || newPassword.length < 4) {
+      return res.status(400).json({ error: "New password must be at least 4 characters" });
+    }
+    if (newUsername) ADMIN_USER = newUsername;
+    ADMIN_PASS = newPassword;
+    res.json({ ok: true });
   });
 
   app.get("/api/admin/me", (req, res) => {

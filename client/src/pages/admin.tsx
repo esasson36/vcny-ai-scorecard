@@ -15,7 +15,7 @@ Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, L
 import { cn } from "@/lib/utils";
 
 interface Props { onLogout: () => void; }
-type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams";
+type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams" | "settings";
 
 function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
@@ -155,6 +155,7 @@ export default function AdminPanel({ onLogout }: Props) {
     compare: "Month comparison",
     leaderboard: "Leaderboard",
     teams: "Teams",
+    settings: "Settings",
   };
 
   return (
@@ -189,14 +190,14 @@ export default function AdminPanel({ onLogout }: Props) {
         </div>
 
         {/* Nav tabs */}
-        {(["dashboard", "compare", "leaderboard", "teams"] as View[]).includes(view) && (
+        {(["dashboard", "compare", "leaderboard", "teams", "settings"] as View[]).includes(view) && (
           <div className="flex gap-1 mb-6 border-b border-border pb-0 overflow-x-auto">
-            {(["dashboard", "leaderboard", "teams", "compare"] as const).map(v => (
+            {(["dashboard", "leaderboard", "teams", "compare", "settings"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap",
                   view === v ? "border-foreground text-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground"
                 )} style={{ fontFamily: "'Geist Mono', monospace" }}>
-                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : "Compare"}
+                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : v === "settings" ? "Settings" : "Compare"}
               </button>
             ))}
           </div>
@@ -236,6 +237,10 @@ export default function AdminPanel({ onLogout }: Props) {
 
         {view === "teams" && (
           <TeamsView allSubs={subs} allMonths={allMonths} />
+        )}
+
+        {view === "settings" && (
+          <SettingsView />
         )}
 
         {view === "detail" && activeSub && (
@@ -1128,6 +1133,124 @@ function TrendChart({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: 
         Company avg score — month over month
       </h3>
       <Line data={data} options={options} />
+    </div>
+  );
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function SettingsView() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/change-password", {
+        currentPassword,
+        newUsername: newUsername.trim() || undefined,
+        newPassword,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setStatus("success");
+      setCurrentPassword("");
+      setNewUsername("");
+      setNewPassword("");
+      setConfirmPassword("");
+    },
+    onError: (e: any) => {
+      setStatus("error");
+      setErrorMsg(e.message ?? "Something went wrong");
+    },
+  });
+
+  function handleSave() {
+    setStatus("idle");
+    setErrorMsg("");
+    if (!currentPassword) { setStatus("error"); setErrorMsg("Enter your current password"); return; }
+    if (!newPassword) { setStatus("error"); setErrorMsg("Enter a new password"); return; }
+    if (newPassword !== confirmPassword) { setStatus("error"); setErrorMsg("New passwords don't match"); return; }
+    if (newPassword.length < 4) { setStatus("error"); setErrorMsg("Password must be at least 4 characters"); return; }
+    mutation.mutate();
+  }
+
+  return (
+    <div className="max-w-md">
+      <div className="bg-card border border-border rounded-sm p-6">
+        <h2 className="text-base font-semibold mb-1">Change password</h2>
+        <p className="text-xs text-muted-foreground mb-5">Update your admin login credentials.</p>
+
+        {status === "success" && (
+          <div className="mb-4 px-3 py-2 rounded-sm bg-green-50 border border-green-200 text-green-700 text-sm">
+            Password updated. Use your new credentials next time you log in.
+          </div>
+        )}
+        {status === "error" && (
+          <div className="mb-4 px-3 py-2 rounded-sm bg-red-50 border border-red-200 text-red-700 text-sm">
+            {errorMsg}
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">Current password</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">New username <span className="text-muted-foreground/60">(optional — leave blank to keep current)</span></label>
+            <input
+              type="text"
+              value={newUsername}
+              onChange={e => setNewUsername(e.target.value)}
+              placeholder="Leave blank to keep current"
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">New password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">Confirm new password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSave()}
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+            />
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={mutation.isPending}
+            className="w-full bg-foreground text-background py-2.5 rounded-sm font-semibold text-sm hover:opacity-85 transition-opacity disabled:opacity-50"
+          >
+            {mutation.isPending ? "Saving..." : "Update credentials"}
+          </button>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-4">
+          Note: credentials reset if the server restarts. For permanent credentials, update the values in <span className="font-mono">server/routes.ts</span> and redeploy.
+        </p>
+      </div>
     </div>
   );
 }
