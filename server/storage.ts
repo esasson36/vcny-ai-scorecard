@@ -14,9 +14,12 @@ sqlite.exec(`
     tools TEXT NOT NULL,
     use_cases TEXT DEFAULT '',
     challenges TEXT DEFAULT '',
-    timestamp TEXT NOT NULL
+    timestamp TEXT NOT NULL,
+    month TEXT NOT NULL DEFAULT ''
   )
 `);
+// Migrate: add month column if it doesn't exist yet
+try { sqlite.exec(`ALTER TABLE submissions ADD COLUMN month TEXT NOT NULL DEFAULT ''`); } catch {}
 
 export interface IStorage {
   getAllSubmissions(): Submission[];
@@ -39,6 +42,7 @@ export const storage: IStorage = {
   createSubmission(data: InsertSubmission): Submission {
     const now = new Date().toISOString();
     const id = "sub_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
+    const month = now.slice(0, 7); // "YYYY-MM"
     const row: Submission = {
       id,
       name: data.name,
@@ -47,6 +51,7 @@ export const storage: IStorage = {
       useCases: data.useCases ?? "",
       challenges: data.challenges ?? "",
       timestamp: now,
+      month,
     };
     db.insert(submissions).values(row).run();
     return row;

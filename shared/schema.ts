@@ -12,6 +12,8 @@ export const submissions = sqliteTable("submissions", {
   useCases: text("use_cases").default(""),
   challenges: text("challenges").default(""),
   timestamp: text("timestamp").notNull(),
+  // "YYYY-MM" e.g. "2026-06" — set at submission time
+  month: text("month").notNull().default(""),
 });
 
 export const insertSubmissionSchema = createInsertSchema(submissions).omit({
