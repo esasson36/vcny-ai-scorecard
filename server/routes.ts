@@ -76,4 +76,9 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (!deleted) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true });
   });
+
+  app.delete("/api/submissions", requireAdmin, (_req, res) => {
+    const count = storage.clearAllSubmissions();
+    res.json({ ok: true, deleted: count });
+  });
 }

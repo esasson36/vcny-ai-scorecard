@@ -71,6 +71,11 @@ export default function AdminPanel({ onLogout }: Props) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/submissions"] }); setView("dashboard"); },
   });
 
+  const clearAllMutation = useMutation({
+    mutationFn: async () => { await apiRequest("DELETE", "/api/submissions", {}); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/submissions"] }); setView("dashboard"); },
+  });
+
   const ovMutation = useMutation({
     mutationFn: async ({ id, tool, value }: { id: string; tool: string; value: number }) => {
       const res = await apiRequest("PATCH", `/api/submissions/${id}/ov`, { tool, value });
@@ -144,6 +149,12 @@ export default function AdminPanel({ onLogout }: Props) {
             subs={sorted}
             statsByTool={statsByTool}
             onOpen={id => { setActiveId(id); setView("detail"); }}
+            onClearAll={() => {
+              if (confirm(`Delete all ${subs.length} submission${subs.length !== 1 ? "s" : ""} permanently? This cannot be undone.`)) {
+                clearAllMutation.mutate();
+              }
+            }}
+            isClearingAll={clearAllMutation.isPending}
           />
         )}
 
@@ -162,10 +173,12 @@ export default function AdminPanel({ onLogout }: Props) {
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
-function DashView({ subs, statsByTool, onOpen }: {
+function DashView({ subs, statsByTool, onOpen, onClearAll, isClearingAll }: {
   subs: Submission[];
   statsByTool: Record<string, number[]>;
   onOpen: (id: string) => void;
+  onClearAll: () => void;
+  isClearingAll: boolean;
 }) {
   function avgGrade(pcts: number[]) {
     if (!pcts.length) return "—";
@@ -194,6 +207,20 @@ function DashView({ subs, statsByTool, onOpen }: {
       </div>
 
       {/* Submission list */}
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Submissions</h2>
+        {subs.length > 0 && (
+          <button
+            data-testid="button-clear-all"
+            onClick={onClearAll}
+            disabled={isClearingAll}
+            className="text-[11px] uppercase tracking-[0.08em] border border-red-200 text-red-600 rounded-sm px-3 py-1 hover:border-red-400 hover:bg-red-50 transition-colors disabled:opacity-40"
+            style={{ fontFamily: "'Geist Mono', monospace" }}
+          >
+            {isClearingAll ? "Clearing..." : "Clear all"}
+          </button>
+        )}
+      </div>
       {subs.length === 0 ? (
         <div className="bg-card border border-border rounded-sm p-8 text-center text-sm text-muted-foreground">
           No submissions yet. Share the form URL with your team.

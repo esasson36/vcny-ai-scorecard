@@ -24,6 +24,7 @@ export interface IStorage {
   createSubmission(data: InsertSubmission): Submission;
   updateOutputVolume(id: string, tool: string, value: number): Submission | undefined;
   deleteSubmission(id: string): boolean;
+  clearAllSubmissions(): number;
 }
 
 export const storage: IStorage = {
@@ -64,5 +65,10 @@ export const storage: IStorage = {
   deleteSubmission(id: string): boolean {
     const result = db.delete(submissions).where(eq(submissions.id, id)).run();
     return result.changes > 0;
+  },
+
+  clearAllSubmissions(): number {
+    const result = db.delete(submissions).run();
+    return result.changes;
   },
 };
