@@ -32,6 +32,15 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.status(401).json({ error: "Unauthorized" });
   }
 
+  // ── Duplicate check (public) ───────────────────────────────────────────
+  app.get("/api/submissions/check-duplicate", (req, res) => {
+    const { name, team } = req.query as { name?: string; team?: string };
+    if (!name || !team) return res.status(400).json({ error: "name and team required" });
+    const month = new Date().toISOString().slice(0, 7);
+    const isDuplicate = storage.checkDuplicate(name, team, month);
+    res.json({ isDuplicate, month });
+  });
+
   // ── Submissions (public — employees submit) ─────────────────────────────
   app.post("/api/submissions", (req, res) => {
     const result = submitBodySchema.safeParse(req.body);
@@ -80,5 +89,19 @@ export function registerRoutes(httpServer: Server, app: Express) {
   app.delete("/api/submissions", requireAdmin, (_req, res) => {
     const count = storage.clearAllSubmissions();
     res.json({ ok: true, deleted: count });
+  });
+
+  // ── Headcounts (admin only) ──────────────────────────────────────────
+  app.get("/api/headcounts", requireAdmin, (_req, res) => {
+    res.json(storage.getHeadcounts());
+  });
+
+  app.post("/api/headcounts", requireAdmin, (req, res) => {
+    const { team, count } = req.body ?? {};
+    if (!team || typeof count !== "number" || count < 0) {
+      return res.status(400).json({ error: "team and count required" });
+    }
+    storage.setHeadcount(team, count);
+    res.json({ ok: true });
   });
 }

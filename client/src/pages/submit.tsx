@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { TOOLS, TOOL_KEYS, TEAMS, LABELS, type ToolKey, type MetricKey } from "@/lib/scorecard";
@@ -24,6 +24,28 @@ export default function SubmitPage() {
   const [challenges, setChallenges] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [dupWarning, setDupWarning] = useState("");
+  const [dupChecked, setDupChecked] = useState(""); // "name|team" last checked
+
+  // Check for duplicate when name + team are both filled
+  useEffect(() => {
+    const key = `${name.trim()}|${team}`;
+    if (!name.trim() || !team || key === dupChecked) return;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiRequest("GET", `/api/submissions/check-duplicate?name=${encodeURIComponent(name.trim())}&team=${encodeURIComponent(team)}`);
+        const data = await res.json();
+        if (data.isDuplicate) {
+          const monthLabel = new Date(data.month + "-02").toLocaleString("default", { month: "long", year: "numeric" });
+          setDupWarning(`Heads up: ${name.trim()} from ${team} already submitted for ${monthLabel}. You can still submit again if needed.`);
+        } else {
+          setDupWarning("");
+        }
+        setDupChecked(key);
+      } catch {}
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [name, team]);
 
   const mutation = useMutation({
     mutationFn: async (body: object) => {
@@ -158,6 +180,12 @@ export default function SubmitPage() {
           </div>
         </div>
 
+        {dupWarning && (
+          <div className="flex items-start gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-yellow-50 border border-yellow-200 text-yellow-800">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            {dupWarning}
+          </div>
+        )}
         {error && (
           <div className="flex items-center gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-red-50 border border-red-200 text-red-700">
             <AlertCircle className="w-4 h-4 shrink-0" />

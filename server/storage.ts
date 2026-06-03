@@ -21,6 +21,14 @@ sqlite.exec(`
 // Migrate: add month column if it doesn't exist yet
 try { sqlite.exec(`ALTER TABLE submissions ADD COLUMN month TEXT NOT NULL DEFAULT ''`); } catch {}
 
+// Team headcounts table
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS headcounts (
+    team TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
 export interface IStorage {
   getAllSubmissions(): Submission[];
   getSubmission(id: string): Submission | undefined;
@@ -28,6 +36,9 @@ export interface IStorage {
   updateOutputVolume(id: string, tool: string, value: number): Submission | undefined;
   deleteSubmission(id: string): boolean;
   clearAllSubmissions(): number;
+  checkDuplicate(name: string, team: string, month: string): boolean;
+  getHeadcounts(): Record<string, number>;
+  setHeadcount(team: string, count: number): void;
 }
 
 export const storage: IStorage = {
@@ -75,5 +86,24 @@ export const storage: IStorage = {
   clearAllSubmissions(): number {
     const result = db.delete(submissions).run();
     return result.changes;
+  },
+
+  checkDuplicate(name: string, team: string, month: string): boolean {
+    const row = sqlite.prepare(
+      `SELECT id FROM submissions WHERE name = ? AND team = ? AND month = ? LIMIT 1`
+    ).get(name, team, month) as { id: string } | undefined;
+    return !!row;
+  },
+
+  getHeadcounts(): Record<string, number> {
+    const rows = sqlite.prepare(`SELECT team, count FROM headcounts`).all() as { team: string; count: number }[];
+    const result: Record<string, number> = {};
+    rows.forEach(r => { result[r.team] = r.count; });
+    return result;
+  },
+
+  setHeadcount(team: string, count: number): void {
+    sqlite.prepare(`INSERT INTO headcounts (team, count) VALUES (?, ?) ON CONFLICT(team) DO UPDATE SET count = excluded.count`)
+      .run(team, count);
   },
 };

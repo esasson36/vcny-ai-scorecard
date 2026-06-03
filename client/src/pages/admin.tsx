@@ -40,6 +40,17 @@ export default function AdminPanel({ onLogout }: Props) {
     refetchInterval: 30000,
   });
 
+  const { data: headcounts = {}, refetch: refetchHC } = useQuery<Record<string, number>>({
+    queryKey: ["/api/headcounts"],
+  });
+
+  const setHeadcountMutation = useMutation({
+    mutationFn: async ({ team, count }: { team: string; count: number }) => {
+      await apiRequest("POST", "/api/headcounts", { team, count });
+    },
+    onSuccess: () => refetchHC(),
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => { await apiRequest("POST", "/api/admin/logout", {}); },
     onSuccess: onLogout,
@@ -196,6 +207,8 @@ export default function AdminPanel({ onLogout }: Props) {
                 clearAllMutation.mutate();
             }}
             isClearingAll={clearAllMutation.isPending}
+            headcounts={headcounts}
+            onSetHeadcount={(team, count) => setHeadcountMutation.mutate({ team, count })}
           />
         )}
 
@@ -235,11 +248,13 @@ export default function AdminPanel({ onLogout }: Props) {
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOpen, onOpenPerson, onClearAll, isClearingAll }: {
+function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOpen, onOpenPerson, onClearAll, isClearingAll, headcounts, onSetHeadcount }: {
   subs: Submission[]; allSubs: Submission[]; allMonths: string[];
   selectedMonth: string; onMonthChange: (m: string) => void;
   onOpen: (id: string) => void; onOpenPerson: (name: string) => void;
   onClearAll: () => void; isClearingAll: boolean;
+  headcounts: Record<string, number>;
+  onSetHeadcount: (team: string, count: number) => void;
 }) {
   function avgGradeForMonth(m: string) {
     const msubs = m === "all" ? allSubs : allSubs.filter(s => getMonth(s) === m);
@@ -297,6 +312,9 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
           </div>
         ))}
       </div>
+
+      {/* Response rate */}
+      <ResponseRate subs={subs} headcounts={headcounts} onSetHeadcount={onSetHeadcount} />
 
       {/* Submissions list */}
       <div className="flex items-center justify-between mb-2">
@@ -825,6 +843,74 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>All time</h2>
         <RankTable rankings={allTimeRankings} label="all submissions" />
+      </div>
+    </div>
+  );
+}
+
+// ── Response Rate ─────────────────────────────────────────────────────────────
+function ResponseRate({ subs, headcounts, onSetHeadcount }: {
+  subs: Submission[];
+  headcounts: Record<string, number>;
+  onSetHeadcount: (team: string, count: number) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  // Count unique respondents per team in this view
+  const respondedPerTeam = new Map<string, Set<string>>();
+  subs.forEach(sub => {
+    if (!respondedPerTeam.has(sub.team)) respondedPerTeam.set(sub.team, new Set());
+    respondedPerTeam.get(sub.team)!.add(sub.name);
+  });
+
+  const teams = Array.from(new Set([...Object.keys(headcounts), ...Array.from(respondedPerTeam.keys())])).sort();
+  if (teams.length === 0) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-4 mb-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Response rate</h3>
+        <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Click count to edit headcount</span>
+      </div>
+      <div className="space-y-2.5">
+        {teams.map(team => {
+          const responded = respondedPerTeam.get(team)?.size ?? 0;
+          const total = headcounts[team] ?? 0;
+          const pct = total > 0 ? Math.round((responded / total) * 100) : null;
+          return (
+            <div key={team} className="grid grid-cols-[120px_1fr_80px] gap-3 items-center">
+              <span className="text-sm truncate">{team}</span>
+              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                {pct !== null && (
+                  <div className={cn("h-full rounded-full transition-all",
+                    pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-400"
+                  )} style={{ width: `${pct}%` }} />
+                )}
+              </div>
+              <div className="text-right text-xs font-mono flex items-center justify-end gap-1">
+                <span className="font-semibold">{responded}</span>
+                <span className="text-muted-foreground">/</span>
+                {editing === team ? (
+                  <input
+                    type="number" min={0} value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onBlur={() => { onSetHeadcount(team, parseInt(draft) || 0); setEditing(null); }}
+                    onKeyDown={e => { if (e.key === "Enter") { onSetHeadcount(team, parseInt(draft) || 0); setEditing(null); } }}
+                    className="w-10 text-center border border-border rounded-sm bg-white focus:border-foreground focus:outline-none px-1"
+                    autoFocus
+                  />
+                ) : (
+                  <button onClick={() => { setEditing(team); setDraft(String(total)); }}
+                    className="text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
+                    {total > 0 ? total : "?"}
+                  </button>
+                )}
+                {pct !== null && <span className="text-muted-foreground ml-1">({pct}%)</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
