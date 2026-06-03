@@ -10,7 +10,7 @@ import { LogOut, RefreshCw, Trash2, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props { onLogout: () => void; }
-type View = "dashboard" | "detail" | "person" | "compare";
+type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard";
 
 function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
@@ -137,6 +137,7 @@ export default function AdminPanel({ onLogout }: Props) {
     detail: activeSub?.name ?? "Submission",
     person: activePerson ?? "Person",
     compare: "Month comparison",
+    leaderboard: "Leaderboard",
   };
 
   return (
@@ -170,15 +171,15 @@ export default function AdminPanel({ onLogout }: Props) {
           </div>
         </div>
 
-        {/* Nav tabs (only on dashboard) */}
-        {view === "dashboard" && (
+        {/* Nav tabs */}
+        {(["dashboard", "compare", "leaderboard"] as View[]).includes(view) && (
           <div className="flex gap-1 mb-6 border-b border-border pb-0">
-            {(["dashboard", "compare"] as const).map(v => (
+            {(["dashboard", "leaderboard", "compare"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-2 border-b-2 -mb-px transition-colors",
                   view === v ? "border-foreground text-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground"
                 )} style={{ fontFamily: "'Geist Mono', monospace" }}>
-                {v === "dashboard" ? "Submissions" : "Compare months"}
+                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : "Compare months"}
               </button>
             ))}
           </div>
@@ -204,6 +205,13 @@ export default function AdminPanel({ onLogout }: Props) {
             compareA={compareA} compareB={compareB}
             onChangeA={setCompareA} onChangeB={setCompareB}
             onBack={() => setView("dashboard")}
+          />
+        )}
+
+        {view === "leaderboard" && (
+          <LeaderboardView
+            allSubs={subs} allMonths={allMonths}
+            onOpenPerson={name => { setActivePerson(name); setView("person"); }}
           />
         )}
 
@@ -676,6 +684,147 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
             Delete submission
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Leaderboard ───────────────────────────────────────────────────────────────
+function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
+  allSubs: Submission[];
+  allMonths: string[];
+  onOpenPerson: (name: string) => void;
+}) {
+  const latestMonth = allMonths[0] ?? "";
+
+  function buildRankings(subs: Submission[]) {
+    const map = new Map<string, { name: string; team: string; pcts: number[]; months: Set<string> }>();
+    subs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      const pcts = Object.keys(tools).map(t => calcScore(tools[t]).pct);
+      if (!pcts.length) return;
+      const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+      const existing = map.get(sub.name);
+      if (existing) { existing.pcts.push(avg); existing.months.add(getMonth(sub)); }
+      else { map.set(sub.name, { name: sub.name, team: sub.team, pcts: [avg], months: new Set([getMonth(sub)]) }); }
+    });
+    return [...map.values()]
+      .map(p => ({ ...p, avg: Math.round(p.pcts.reduce((a, b) => a + b, 0) / p.pcts.length) }))
+      .sort((a, b) => b.avg - a.avg);
+  }
+
+  function buildMostImproved() {
+    if (allMonths.length < 2) return [];
+    const prevMonth = allMonths[1];
+    const currMonth = allMonths[0];
+    const subsP = allSubs.filter(s => getMonth(s) === prevMonth);
+    const subsC = allSubs.filter(s => getMonth(s) === currMonth);
+    function personAvg(subs: Submission[], name: string) {
+      const sub = subs.find(s => s.name === name);
+      if (!sub) return null;
+      const tools = parseTools(sub.tools);
+      const pcts = Object.keys(tools).map(t => calcScore(tools[t]).pct);
+      return pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+    }
+    const names = [...new Set(subsC.map(s => s.name))];
+    return names.map(name => {
+      const c = personAvg(subsC, name);
+      const p = personAvg(subsP, name);
+      if (c === null || p === null) return null;
+      const sub = subsC.find(s => s.name === name)!;
+      return { name, team: sub.team, prev: p, curr: c, delta: c - p };
+    }).filter((x): x is NonNullable<typeof x> => x !== null && x.delta > 0)
+      .sort((a, b) => b.delta - a.delta).slice(0, 5);
+  }
+
+  const allTimeRankings = buildRankings(allSubs);
+  const monthRankings = buildRankings(allSubs.filter(s => getMonth(s) === latestMonth));
+  const mostImproved = buildMostImproved();
+  const MEDALS = ["#F4C542", "#A8A9AD", "#CD7F32"];
+
+  function RankTable({ rankings, label }: { rankings: ReturnType<typeof buildRankings>; label: string }) {
+    if (!rankings.length) return (
+      <div className="bg-card border border-border rounded-sm p-6 text-center text-sm text-muted-foreground">
+        No submissions yet for {label}.
+      </div>
+    );
+    return (
+      <div className="bg-card border border-border rounded-sm overflow-hidden">
+        <div className="divide-y divide-border">
+          {rankings.map((p, i) => {
+            const g = pctToGrade(p.avg);
+            return (
+              <div key={p.name} className="flex items-center gap-4 px-4 py-3 hover:bg-secondary/20 transition-colors">
+                <div className="w-7 text-center">
+                  {i < 3
+                    ? <span className="text-base font-bold" style={{ color: MEDALS[i] }}>#{i + 1}</span>
+                    : <span className="text-sm text-muted-foreground font-mono">{i + 1}</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm truncate">{p.name}</div>
+                  <div className="text-xs text-muted-foreground">{p.team}</div>
+                </div>
+                <div className="w-24 hidden sm:block">
+                  <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-foreground/70" style={{ width: `${p.avg}%` }} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-muted-foreground font-mono">{p.avg}%</span>
+                  <span className={cn("text-xl font-medium leading-none", gradeClass(g))} style={{ fontFamily: "'Fraunces', serif" }}>{g}</span>
+                </div>
+                {p.months.size > 1 && (
+                  <button onClick={() => onOpenPerson(p.name)}
+                    className="text-[10px] uppercase tracking-wider border border-border rounded-full px-2 py-0.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors shrink-0"
+                    style={{ fontFamily: "'Geist Mono', monospace" }}>Trend</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {mostImproved.length > 0 && (
+        <div>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>
+            Most improved — {fmtMonth(allMonths[1])} to {fmtMonth(allMonths[0])}
+          </h2>
+          <div className="bg-card border border-border rounded-sm overflow-hidden">
+            <div className="divide-y divide-border">
+              {mostImproved.map((p, i) => (
+                <div key={p.name} className="flex items-center gap-4 px-4 py-3">
+                  <div className="w-7 text-center text-sm text-muted-foreground font-mono">{i + 1}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm">{p.name}</div>
+                    <div className="text-xs text-muted-foreground">{p.team}</div>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm shrink-0">
+                    <span className={cn(gradeClass(pctToGrade(p.prev)))} style={{ fontFamily: "'Fraunces', serif" }}>{pctToGrade(p.prev)}</span>
+                    <span className="text-muted-foreground">to</span>
+                    <span className={cn(gradeClass(pctToGrade(p.curr)))} style={{ fontFamily: "'Fraunces', serif" }}>{pctToGrade(p.curr)}</span>
+                    <span className="text-emerald-600 font-semibold text-xs ml-1">+{p.delta}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>
+          {latestMonth ? fmtMonth(latestMonth) : "This month"}
+        </h2>
+        <RankTable rankings={monthRankings} label={latestMonth ? fmtMonth(latestMonth) : "this month"} />
+      </div>
+
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>All time</h2>
+        <RankTable rankings={allTimeRankings} label="all submissions" />
       </div>
     </div>
   );
