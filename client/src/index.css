@@ -57,6 +57,7 @@
 
 @layer base {
   * { @apply border-border; box-sizing: border-box; }
+  html { color-scheme: light; }
   body {
     @apply bg-background text-foreground;
     font-family: 'Geist', 'Inter', system-ui, sans-serif;
