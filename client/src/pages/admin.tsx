@@ -6,10 +6,9 @@ import {
   TOOLS, TOOL_KEYS, LABELS, type ToolKey, type MetricKey,
   calcScore, pctToGrade, gradeAction, gradeClass,
 } from "@/lib/scorecard";
-import { LogOut, RefreshCw, Trash2, ArrowLeft, Sun, Moon, Printer } from "lucide-react";
+import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
-import { useTheme } from "@/lib/theme";
 import { getCoachSuggestions } from "@/lib/scorecard";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -33,7 +32,6 @@ function getMonth(sub: Submission) {
 }
 
 export default function AdminPanel({ onLogout }: Props) {
-  const { theme, toggle: toggleTheme } = useTheme();
   const [view, setView] = useState<View>("dashboard");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activePerson, setActivePerson] = useState<string | null>(null);
@@ -181,11 +179,6 @@ export default function AdminPanel({ onLogout }: Props) {
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
               style={{ fontFamily: "'Geist Mono', monospace" }}>
               ↓ CSV
-            </button>
-            <button onClick={toggleTheme}
-              className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"
-              style={{ fontFamily: "'Geist Mono', monospace" }}>
-              {theme === "dark" ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
             </button>
             <button data-testid="button-logout" onClick={() => logoutMutation.mutate()}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"

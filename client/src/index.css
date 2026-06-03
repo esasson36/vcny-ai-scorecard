@@ -9,28 +9,6 @@
     --foreground: 0 0% 10%;
   }
 
-  .dark {
-    --background: 225 15% 9%;
-    --foreground: 215 20% 88%;
-    --card: 225 14% 12%;
-    --card-foreground: 215 20% 88%;
-    --popover: 225 14% 12%;
-    --popover-foreground: 215 20% 88%;
-    --primary: 215 20% 88%;
-    --primary-foreground: 225 15% 9%;
-    --secondary: 225 12% 18%;
-    --secondary-foreground: 215 15% 75%;
-    --muted: 225 12% 18%;
-    --muted-foreground: 215 12% 52%;
-    --accent: 225 12% 22%;
-    --accent-foreground: 215 20% 88%;
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 225 12% 22%;
-    --input: 225 12% 22%;
-    --ring: 215 20% 88%;
-  }
-
   :root {
 
     --card: 0 0% 100%;
@@ -168,13 +146,7 @@ input[type=range] {
   }
 }
 
-/* Dark mode for native selects */
-.dark select {
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--input));
-  color-scheme: dark;
-}
+
 input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px; height: 16px;
