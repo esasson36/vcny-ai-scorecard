@@ -655,7 +655,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-5">
+      <div className="flex items-center gap-2 mb-5 no-print">
         <button onClick={onBack} className="flex items-center gap-1.5 text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
@@ -664,7 +664,12 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
           <Printer className="w-3.5 h-3.5" /> Print / Save PDF
         </button>
       </div>
-      <div className="bg-card border border-border rounded-sm p-6">
+      <div className="bg-card border border-border rounded-sm p-6 print-area">
+        {/* Print-only header */}
+        <div className="hidden print:flex items-center justify-between mb-4 pb-3 border-b border-gray-300">
+          <p className="text-xs uppercase tracking-widest text-gray-500">VCNY · AI Scorecard</p>
+          <p className="text-xs text-gray-500">{new Date().toLocaleDateString()}</p>
+        </div>
         <h2 className="text-xl font-medium mb-0.5" style={{ fontFamily: "'Fraunces', serif" }}>{sub.name}</h2>
         <p className="text-sm text-muted-foreground mb-5">
           {sub.team} · {fmtMonth(getMonth(sub))} · Submitted {new Date(sub.timestamp).toLocaleString()}
@@ -699,7 +704,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
                   <span>{LABELS[m][ts[m]]}</span>
                 </div>
               ))}
-              <div className="mt-3 pt-3 border-t border-border">
+              <div className="mt-3 pt-3 border-t border-border no-print">
                 <label className="block text-xs text-muted-foreground mb-1.5">Output volume from usage exports (0–5)</label>
                 <div className="flex items-center gap-2">
                   <input data-testid={`input-ov-${t}`} type="number" min={0} max={5}
@@ -729,7 +734,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
             <p className="text-sm">{sub.challenges}</p>
           </div>
         )}
-        <div className="mt-6 pt-5 border-t border-border">
+        <div className="mt-6 pt-5 border-t border-border no-print">
           <button data-testid="button-delete" onClick={() => onDelete(sub.id)}
             className="text-sm border border-red-200 text-red-700 rounded-sm px-3 py-1.5 hover:border-red-500 hover:bg-red-900/20 dark:hover:bg-red-900/20 transition-colors">
             Delete submission
