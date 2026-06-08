@@ -1,109 +1,152 @@
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
-import { eq, desc } from "drizzle-orm";
-import { submissions, type Submission, type InsertSubmission } from "@shared/schema";
+import { createClient } from "@supabase/supabase-js";
+import type { Submission, InsertSubmission } from "@shared/schema";
 
-const sqlite = new Database("data.db");
-export const db = drizzle(sqlite);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS submissions (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    team TEXT NOT NULL,
-    tools TEXT NOT NULL,
-    use_cases TEXT DEFAULT '',
-    challenges TEXT DEFAULT '',
-    timestamp TEXT NOT NULL,
-    month TEXT NOT NULL DEFAULT ''
-  )
-`);
-// Migrate: add month column if it doesn't exist yet
-try { sqlite.exec(`ALTER TABLE submissions ADD COLUMN month TEXT NOT NULL DEFAULT ''`); } catch {}
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  throw new Error(
+    "Missing SUPABASE_URL or SUPABASE_SERVICE_KEY environment variables. " +
+    "Set them in Render (and your local .env) before starting the server."
+  );
+}
 
-// Team headcounts table
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS headcounts (
-    team TEXT PRIMARY KEY,
-    count INTEGER NOT NULL DEFAULT 0
-  )
-`);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+// Raw DB row (snake_case columns) → app-facing Submission (camelCase)
+interface Row {
+  id: string;
+  name: string;
+  team: string;
+  tools: string;
+  use_cases: string | null;
+  challenges: string | null;
+  timestamp: string;
+  month: string;
+}
+
+function toSubmission(r: Row): Submission {
+  return {
+    id: r.id,
+    name: r.name,
+    team: r.team,
+    tools: r.tools,
+    useCases: r.use_cases ?? "",
+    challenges: r.challenges ?? "",
+    timestamp: r.timestamp,
+    month: r.month,
+  };
+}
 
 export interface IStorage {
-  getAllSubmissions(): Submission[];
-  getSubmission(id: string): Submission | undefined;
-  createSubmission(data: InsertSubmission): Submission;
-  updateOutputVolume(id: string, tool: string, value: number): Submission | undefined;
-  deleteSubmission(id: string): boolean;
-  clearAllSubmissions(): number;
-  checkDuplicate(name: string, team: string, month: string): boolean;
-  getHeadcounts(): Record<string, number>;
-  setHeadcount(team: string, count: number): void;
+  getAllSubmissions(): Promise<Submission[]>;
+  getSubmission(id: string): Promise<Submission | undefined>;
+  createSubmission(data: InsertSubmission): Promise<Submission>;
+  updateOutputVolume(id: string, tool: string, value: number): Promise<Submission | undefined>;
+  deleteSubmission(id: string): Promise<boolean>;
+  clearAllSubmissions(): Promise<number>;
+  checkDuplicate(name: string, team: string, month: string): Promise<boolean>;
+  getHeadcounts(): Promise<Record<string, number>>;
+  setHeadcount(team: string, count: number): Promise<void>;
 }
 
 export const storage: IStorage = {
-  getAllSubmissions(): Submission[] {
-    return db.select().from(submissions).orderBy(desc(submissions.timestamp)).all();
+  async getAllSubmissions(): Promise<Submission[]> {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("*")
+      .order("timestamp", { ascending: false });
+    if (error) throw error;
+    return (data as Row[]).map(toSubmission);
   },
 
-  getSubmission(id: string): Submission | undefined {
-    return db.select().from(submissions).where(eq(submissions.id, id)).get();
+  async getSubmission(id: string): Promise<Submission | undefined> {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? toSubmission(data as Row) : undefined;
   },
 
-  createSubmission(data: InsertSubmission): Submission {
+  async createSubmission(data: InsertSubmission): Promise<Submission> {
     const now = new Date().toISOString();
     const id = "sub_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
     const month = now.slice(0, 7); // "YYYY-MM"
-    const row: Submission = {
+    const row: Row = {
       id,
       name: data.name,
       team: data.team,
       tools: data.tools,
-      useCases: data.useCases ?? "",
+      use_cases: data.useCases ?? "",
       challenges: data.challenges ?? "",
       timestamp: now,
       month,
     };
-    db.insert(submissions).values(row).run();
-    return row;
+    const { error } = await supabase.from("submissions").insert(row);
+    if (error) throw error;
+    return toSubmission(row);
   },
 
-  updateOutputVolume(id: string, tool: string, value: number): Submission | undefined {
-    const existing = db.select().from(submissions).where(eq(submissions.id, id)).get();
+  async updateOutputVolume(id: string, tool: string, value: number): Promise<Submission | undefined> {
+    const existing = await this.getSubmission(id);
     if (!existing) return undefined;
     const tools = JSON.parse(existing.tools);
     if (!tools[tool]) return undefined;
     tools[tool].outputVolume = value;
-    db.update(submissions).set({ tools: JSON.stringify(tools) }).where(eq(submissions.id, id)).run();
-    return db.select().from(submissions).where(eq(submissions.id, id)).get();
+    const { error } = await supabase
+      .from("submissions")
+      .update({ tools: JSON.stringify(tools) })
+      .eq("id", id);
+    if (error) throw error;
+    return this.getSubmission(id);
   },
 
-  deleteSubmission(id: string): boolean {
-    const result = db.delete(submissions).where(eq(submissions.id, id)).run();
-    return result.changes > 0;
+  async deleteSubmission(id: string): Promise<boolean> {
+    const { error, count } = await supabase
+      .from("submissions")
+      .delete({ count: "exact" })
+      .eq("id", id);
+    if (error) throw error;
+    return (count ?? 0) > 0;
   },
 
-  clearAllSubmissions(): number {
-    const result = db.delete(submissions).run();
-    return result.changes;
+  async clearAllSubmissions(): Promise<number> {
+    const { error, count } = await supabase
+      .from("submissions")
+      .delete({ count: "exact" })
+      .neq("id", ""); // Supabase requires a filter; this matches every row
+    if (error) throw error;
+    return count ?? 0;
   },
 
-  checkDuplicate(name: string, team: string, month: string): boolean {
-    const row = sqlite.prepare(
-      `SELECT id FROM submissions WHERE name = ? AND team = ? AND month = ? LIMIT 1`
-    ).get(name, team, month) as { id: string } | undefined;
-    return !!row;
+  async checkDuplicate(name: string, team: string, month: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("id")
+      .eq("name", name)
+      .eq("team", team)
+      .eq("month", month)
+      .limit(1);
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
   },
 
-  getHeadcounts(): Record<string, number> {
-    const rows = sqlite.prepare(`SELECT team, count FROM headcounts`).all() as { team: string; count: number }[];
+  async getHeadcounts(): Promise<Record<string, number>> {
+    const { data, error } = await supabase.from("headcounts").select("*");
+    if (error) throw error;
     const result: Record<string, number> = {};
-    rows.forEach(r => { result[r.team] = r.count; });
+    (data as { team: string; count: number }[] ?? []).forEach(r => { result[r.team] = r.count; });
     return result;
   },
 
-  setHeadcount(team: string, count: number): void {
-    sqlite.prepare(`INSERT INTO headcounts (team, count) VALUES (?, ?) ON CONFLICT(team) DO UPDATE SET count = excluded.count`)
-      .run(team, count);
+  async setHeadcount(team: string, count: number): Promise<void> {
+    const { error } = await supabase
+      .from("headcounts")
+      .upsert({ team, count }, { onConflict: "team" });
+    if (error) throw error;
   },
 };

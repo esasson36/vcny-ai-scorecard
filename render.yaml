@@ -9,3 +9,7 @@ services:
         value: production
       - key: SESSION_SECRET
         generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
