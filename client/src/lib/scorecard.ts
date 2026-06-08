@@ -7,7 +7,7 @@ export const TOOLS: Record<string, string> = {
 export const TOOL_KEYS = ["cgt", "cla", "per"] as const;
 export type ToolKey = typeof TOOL_KEYS[number];
 
-export const TEAMS = ["Marketing", "Merchandising", "Design", "Leadership", "Other"];
+export const TEAMS = ["Marketing", "Merchandising", "Design", "Executive", "Other"];
 
 export const LABELS = {
   freq:   ["Never", "Rarely", "Monthly", "Weekly", "Several/wk", "Daily"],

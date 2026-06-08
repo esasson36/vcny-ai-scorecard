@@ -97,15 +97,27 @@ input[type=range] {
 
 /* Print styles — one page scorecard */
 @media print {
-  /* Hide everything except the scorecard detail card */
-  body > #root > div > div > div:not(.print-area),
-  nav, header, button, a {
-    display: none !important;
-  }
-
   @page {
     size: A4 portrait;
     margin: 15mm 12mm;
+  }
+
+  /* Hide everything via visibility so children can override */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show only the print area and everything inside it */
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+
+  /* Position the print area at the top of the page */
+  .print-area {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
   }
 
   body {
@@ -114,14 +126,10 @@ input[type=range] {
     font-size: 11px;
   }
 
-  /* Show only the scorecard content */
-  .print-area {
-    display: block !important;
-  }
-
   /* Hide nav buttons, back button, print button, delete button */
   .no-print {
     display: none !important;
+    visibility: hidden !important;
   }
 
   /* Ensure cards render with borders */
