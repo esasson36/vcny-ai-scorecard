@@ -355,13 +355,13 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
             const tools = parseTools(sub.tools);
             const hasMultiple = allSubs.filter(s => s.name === sub.name).length > 1;
             return (
-              <div key={sub.id} className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors">
+              <div key={sub.id} onClick={() => onOpen(sub.id)} className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors cursor-pointer">
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-[15px]">{sub.name}</span>
                       {hasMultiple && (
-                        <button onClick={() => onOpenPerson(sub.name)}
+                        <button onClick={e => { e.stopPropagation(); onOpenPerson(sub.name); }}
                           className="text-[10px] uppercase tracking-wider border border-border rounded-full px-2 py-0.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
                           style={{ fontFamily: "'Geist Mono', monospace" }}>
                           Trend →
@@ -372,7 +372,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                       {sub.team} · {fmtMonth(getMonth(sub))}
                     </div>
                   </div>
-                  <button onClick={() => onOpen(sub.id)}
+                  <button onClick={e => { e.stopPropagation(); onOpen(sub.id); }}
                     className="text-xs border border-border rounded-sm px-2.5 py-1 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
                     View →
                   </button>
