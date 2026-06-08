@@ -139,7 +139,9 @@ export default function AdminPanel({ onLogout }: Props) {
       });
     });
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    // Prepend a UTF-8 BOM so Excel reads the file as UTF-8 instead of
+    // Windows-1252 — otherwise dashes like "1–3 hrs" show up as mojibake.
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
