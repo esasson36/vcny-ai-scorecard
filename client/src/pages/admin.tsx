@@ -21,6 +21,14 @@ function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
 }
 
+function subOverallPct(sub: Submission): number {
+  const tools = Object.values(parseTools(sub.tools)) as any[];
+  if (!tools.length) return 0;
+  const total = tools.reduce((s, t) => s + calcScore(t).total, 0);
+  const max   = tools.reduce((s, t) => s + calcScore(t).max,   0);
+  return max > 0 ? Math.round(total / max * 100) : 0;
+}
+
 function fmtMonth(m: string) {
   if (!m) return "Unknown";
   const [y, mo] = m.split("-");
@@ -123,7 +131,7 @@ export default function AdminPanel({ onLogout }: Props) {
     const rows: string[][] = [["Month", "Name", "Team", "Date", "Tool",
       "Frequency", "Time Saved", "Impact", "Adoption", "Output Volume",
       "Score", "Max", "Percent", "Grade", "Recommendation", "Use Cases", "Challenges"]];
-    subs.forEach(sub => {
+    filteredSubs.forEach(sub => {
       const tools = parseTools(sub.tools);
       Object.keys(tools).forEach(t => {
         const ts = tools[t];
@@ -145,7 +153,8 @@ export default function AdminPanel({ onLogout }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vcny-ai-scorecard-${new Date().toISOString().slice(0, 10)}.csv`;
+    const suffix = selectedMonth === "all" ? "all" : selectedMonth;
+    a.download = `vcny-ai-scorecard-${suffix}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -178,10 +187,11 @@ export default function AdminPanel({ onLogout }: Props) {
               style={{ fontFamily: "'Geist Mono', monospace" }}>
               <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />Refresh
             </button>
-            <button onClick={exportCSV} disabled={subs.length === 0}
+            <button onClick={exportCSV} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
-              style={{ fontFamily: "'Geist Mono', monospace" }}>
-              ↓ CSV
+              style={{ fontFamily: "'Geist Mono', monospace" }}
+              title={`Export ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
+              ↓ CSV · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
             </button>
             <button data-testid="button-logout" onClick={() => logoutMutation.mutate()}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"
@@ -354,12 +364,25 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
           {subs.map(sub => {
             const tools = parseTools(sub.tools);
             const hasMultiple = allSubs.filter(s => s.name === sub.name).length > 1;
+            const prevSub = allSubs
+              .filter(s => s.name === sub.name && getMonth(s) < getMonth(sub))
+              .sort((a, b) => getMonth(b).localeCompare(getMonth(a)))[0];
+            const delta = prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
             return (
               <div key={sub.id} onClick={() => onOpen(sub.id)} className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors cursor-pointer">
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-[15px]">{sub.name}</span>
+                      {delta !== null && (
+                        <span className={cn("text-[10px] font-mono px-1.5 py-0.5 rounded",
+                          delta > 0 ? "text-green-500 bg-green-500/10" :
+                          delta < 0 ? "text-red-500 bg-red-500/10" :
+                          "text-muted-foreground bg-secondary"
+                        )}>
+                          {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"}{delta > 0 ? "+" : ""}{delta}%
+                        </span>
+                      )}
                       {hasMultiple && (
                         <button onClick={e => { e.stopPropagation(); onOpenPerson(sub.name); }}
                           className="text-[10px] uppercase tracking-wider border border-border rounded-full px-2 py-0.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
@@ -573,9 +596,46 @@ function CompareView({ allSubs, allMonths, compareA, compareB, onChangeA, onChan
   );
 }
 
+const TOOL_COLORS: Record<string, string> = {
+  cgt: "#22c55e",
+  cla: "#f97316",
+  per: "#3b82f6",
+};
+
 // ── Per-person trend ──────────────────────────────────────────────────────────
 function PersonView({ name, subs, onBack }: { name: string; subs: Submission[]; onBack: () => void; }) {
   const months = [...new Set(subs.map(getMonth))].sort();
+  const activeTools = TOOL_KEYS.filter(t => subs.some(s => !!parseTools(s.tools)[t]));
+
+  const chartData = {
+    labels: months.map(fmtMonth),
+    datasets: activeTools.map(t => ({
+      label: TOOLS[t],
+      data: months.map(m => {
+        const s = subs.find(sub => getMonth(sub) === m);
+        if (!s) return null;
+        const ts = parseTools(s.tools)[t];
+        return ts ? calcScore(ts).pct : null;
+      }),
+      borderColor: TOOL_COLORS[t],
+      backgroundColor: TOOL_COLORS[t] + "33",
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+    })),
+  };
+
+  const chartOptions = {
+    responsive: true,
+    scales: {
+      y: { min: 0, max: 100, ticks: { callback: (v: any) => v + "%" } },
+    },
+    plugins: {
+      legend: { position: "bottom" as const },
+      tooltip: { callbacks: { label: (ctx: any) => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+    },
+  };
 
   return (
     <div>
@@ -587,6 +647,14 @@ function PersonView({ name, subs, onBack }: { name: string; subs: Submission[]; 
         <h2 className="text-xl font-medium mb-0.5" style={{ fontFamily: "'Fraunces', serif" }}>{name}</h2>
         <p className="text-sm text-muted-foreground">{subs[0]?.team} · {subs.length} submission{subs.length !== 1 ? "s" : ""} across {months.length} month{months.length !== 1 ? "s" : ""}</p>
       </div>
+
+      {/* Score trend chart — only shown when there are 2+ months */}
+      {months.length >= 2 && (
+        <div className="bg-card border border-border rounded-sm p-5 mb-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4" style={{ fontFamily: "'Geist Mono', monospace" }}>Score trend</p>
+          <Line data={chartData} options={chartOptions} />
+        </div>
+      )}
 
       {/* Per-tool trend table */}
       {TOOL_KEYS.map(t => {

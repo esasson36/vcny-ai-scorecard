@@ -4,8 +4,8 @@ import { storage } from "./storage";
 import { submitBodySchema } from "@shared/schema";
 import { z } from "zod";
 
-let ADMIN_USER = "elie";
-let ADMIN_PASS = "VCNYAI";
+let ADMIN_USER = process.env.ADMIN_USER || "elie";
+let ADMIN_PASS = process.env.ADMIN_PASS || "VCNYAI";
 
 export function registerRoutes(httpServer: Server, app: Express) {
   // ── Admin auth ──────────────────────────────────────────────────────────
