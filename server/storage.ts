@@ -25,6 +25,7 @@ interface Row {
   challenges: string | null;
   timestamp: string;
   month: string;
+  notes: string | null;
 }
 
 function toSubmission(r: Row): Submission {
@@ -37,6 +38,7 @@ function toSubmission(r: Row): Submission {
     challenges: r.challenges ?? "",
     timestamp: r.timestamp,
     month: r.month,
+    notes: r.notes ?? "",
   };
 }
 
@@ -45,6 +47,7 @@ export interface IStorage {
   getSubmission(id: string): Promise<Submission | undefined>;
   createSubmission(data: InsertSubmission): Promise<Submission>;
   updateOutputVolume(id: string, tool: string, value: number): Promise<Submission | undefined>;
+  updateSubmission(id: string, data: { name?: string; team?: string; notes?: string }): Promise<Submission | undefined>;
   deleteSubmission(id: string): Promise<boolean>;
   clearAllSubmissions(): Promise<number>;
   checkDuplicate(name: string, team: string, month: string): Promise<boolean>;
@@ -89,6 +92,17 @@ export const storage: IStorage = {
     const { error } = await supabase.from("submissions").insert(row);
     if (error) throw error;
     return toSubmission(row);
+  },
+
+  async updateSubmission(id: string, data: { name?: string; team?: string; notes?: string }): Promise<Submission | undefined> {
+    const updates: Record<string, string> = {};
+    if (data.name !== undefined) updates.name = data.name;
+    if (data.team !== undefined) updates.team = data.team;
+    if (data.notes !== undefined) updates.notes = data.notes;
+    if (Object.keys(updates).length === 0) return this.getSubmission(id);
+    const { error } = await supabase.from("submissions").update(updates).eq("id", id);
+    if (error) throw error;
+    return this.getSubmission(id);
   },
 
   async updateOutputVolume(id: string, tool: string, value: number): Promise<Submission | undefined> {

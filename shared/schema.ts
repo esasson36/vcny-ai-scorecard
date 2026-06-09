@@ -14,6 +14,8 @@ export const submissions = sqliteTable("submissions", {
   timestamp: text("timestamp").notNull(),
   // "YYYY-MM" e.g. "2026-06" — set at submission time
   month: text("month").notNull().default(""),
+  // Admin-only notes on this submission
+  notes: text("notes").default(""),
 });
 
 export const insertSubmissionSchema = createInsertSchema(submissions).omit({

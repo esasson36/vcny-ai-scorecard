@@ -15,7 +15,7 @@ Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, L
 import { cn } from "@/lib/utils";
 
 interface Props { onLogout: () => void; }
-type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams" | "settings";
+type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams" | "teamcompare" | "settings";
 
 function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
@@ -82,6 +82,14 @@ export default function AdminPanel({ onLogout }: Props) {
   const ovMutation = useMutation({
     mutationFn: async ({ id, tool, value }: { id: string; tool: string; value: number }) => {
       const res = await apiRequest("PATCH", `/api/submissions/${id}/ov`, { tool, value });
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/submissions"] }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; team?: string; notes?: string } }) => {
+      const res = await apiRequest("PATCH", `/api/submissions/${id}`, data);
       return res.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/submissions"] }),
@@ -202,14 +210,14 @@ export default function AdminPanel({ onLogout }: Props) {
         </div>
 
         {/* Nav tabs */}
-        {(["dashboard", "compare", "leaderboard", "teams", "settings"] as View[]).includes(view) && (
+        {(["dashboard", "compare", "leaderboard", "teams", "teamcompare", "settings"] as View[]).includes(view) && (
           <div className="flex gap-1 mb-6 border-b border-border pb-0 overflow-x-auto">
-            {(["dashboard", "leaderboard", "teams", "compare", "settings"] as const).map(v => (
+            {(["dashboard", "leaderboard", "teams", "compare", "teamcompare", "settings"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap",
                   view === v ? "border-foreground text-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground"
                 )} style={{ fontFamily: "'Geist Mono', monospace" }}>
-                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : v === "settings" ? "Settings" : "Compare"}
+                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : v === "compare" ? "Compare" : v === "teamcompare" ? "Team vs Team" : "Settings"}
               </button>
             ))}
           </div>
@@ -251,6 +259,10 @@ export default function AdminPanel({ onLogout }: Props) {
           <TeamsView allSubs={subs} allMonths={allMonths} />
         )}
 
+        {view === "teamcompare" && (
+          <TeamCompareView allSubs={subs} allMonths={allMonths} />
+        )}
+
         {view === "settings" && (
           <SettingsView />
         )}
@@ -261,6 +273,8 @@ export default function AdminPanel({ onLogout }: Props) {
             onDelete={id => { if (confirm("Delete this submission permanently?")) deleteMutation.mutate(id); }}
             onSaveOV={(tool, value) => ovMutation.mutate({ id: activeSub.id, tool, value })}
             isSavingOV={ovMutation.isPending}
+            onUpdate={(id, data) => updateMutation.mutate({ id, data })}
+            isUpdating={updateMutation.isPending}
           />
         )}
 
@@ -708,11 +722,13 @@ function PersonView({ name, subs, onBack }: { name: string; subs: Submission[]; 
 }
 
 // ── Detail / Scorecard ────────────────────────────────────────────────────────
-function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
+function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isUpdating }: {
   sub: Submission; onBack: () => void;
   onDelete: (id: string) => void;
   onSaveOV: (tool: string, value: number) => void;
   isSavingOV: boolean;
+  onUpdate: (id: string, data: { name?: string; team?: string; notes?: string }) => void;
+  isUpdating: boolean;
 }) {
   const tools = parseTools(sub.tools);
   const [ovValues, setOvValues] = useState<Record<string, string>>(() => {
@@ -720,6 +736,26 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
     Object.keys(tools).forEach(t => { init[t] = tools[t].outputVolume !== undefined ? String(tools[t].outputVolume) : ""; });
     return init;
   });
+
+  // Edit mode for name / team
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(sub.name);
+  const [editTeam, setEditTeam] = useState(sub.team);
+
+  // Notes (always editable inline)
+  const [notes, setNotes] = useState(sub.notes ?? "");
+  const [notesSaved, setNotesSaved] = useState(false);
+
+  function saveEdit() {
+    onUpdate(sub.id, { name: editName.trim() || sub.name, team: editTeam });
+    setEditing(false);
+  }
+
+  function saveNotes() {
+    onUpdate(sub.id, { notes });
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 2000);
+  }
 
   return (
     <div>
@@ -738,10 +774,45 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
           <p className="text-xs uppercase tracking-widest text-gray-500">VCNY · AI Scorecard</p>
           <p className="text-xs text-gray-500">{new Date().toLocaleDateString()}</p>
         </div>
-        <h2 className="text-xl font-medium mb-0.5" style={{ fontFamily: "'Fraunces', serif" }}>{sub.name}</h2>
-        <p className="text-sm text-muted-foreground mb-5">
-          {sub.team} · {fmtMonth(getMonth(sub))} · Submitted {new Date(sub.timestamp).toLocaleString()}
-        </p>
+
+        {/* Name / team — view or edit mode */}
+        {editing ? (
+          <div className="mb-5 no-print space-y-2">
+            <input value={editName} onChange={e => setEditName(e.target.value)}
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none font-semibold text-lg"
+              placeholder="Name" />
+            <select value={editTeam} onChange={e => setEditTeam(e.target.value)}
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none">
+              {["Marketing","Merchandising","Design","Executive","HR","Sales","Other"].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button onClick={saveEdit} disabled={isUpdating}
+                className="text-sm bg-foreground text-background px-4 py-1.5 rounded-sm font-medium hover:opacity-85 transition-opacity disabled:opacity-50">
+                {isUpdating ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => { setEditing(false); setEditName(sub.name); setEditTeam(sub.team); }}
+                className="text-sm border border-border px-4 py-1.5 rounded-sm hover:border-foreground transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between mb-5">
+            <div>
+              <h2 className="text-xl font-medium mb-0.5" style={{ fontFamily: "'Fraunces', serif" }}>{sub.name}</h2>
+              <p className="text-sm text-muted-foreground">
+                {sub.team} · {fmtMonth(getMonth(sub))} · Submitted {new Date(sub.timestamp).toLocaleString()}
+              </p>
+            </div>
+            <button onClick={() => setEditing(true)}
+              className="no-print text-[11px] uppercase tracking-wider border border-border rounded-sm px-3 py-1.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors shrink-0 ml-3"
+              style={{ fontFamily: "'Geist Mono', monospace" }}>
+              Edit
+            </button>
+          </div>
+        )}
         {Object.keys(tools).map((t, i) => {
           const ts = tools[t];
           const sc = calcScore(ts);
@@ -802,7 +873,27 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV }: {
             <p className="text-sm">{sub.challenges}</p>
           </div>
         )}
+        {/* Admin notes */}
         <div className="mt-6 pt-5 border-t border-border no-print">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2"
+            style={{ fontFamily: "'Geist Mono', monospace" }}>Admin notes</label>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Add private notes about this submission…"
+            rows={3}
+            className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors resize-y"
+          />
+          <div className="flex items-center gap-3 mt-2">
+            <button onClick={saveNotes} disabled={isUpdating}
+              className="text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">
+              {isUpdating ? "Saving…" : "Save notes"}
+            </button>
+            {notesSaved && <span className="text-xs text-emerald-600">Saved ✓</span>}
+          </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-border no-print">
           <button data-testid="button-delete" onClick={() => onDelete(sub.id)}
             className="text-sm border border-red-200 text-red-700 rounded-sm px-3 py-1.5 hover:border-red-500 hover:bg-red-900/20 dark:hover:bg-red-900/20 transition-colors">
             Delete submission
@@ -1203,6 +1294,195 @@ function TrendChart({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: 
         Company avg score — month over month
       </h3>
       <Line data={data} options={options} />
+    </div>
+  );
+}
+
+// ── Team vs Team Comparison ───────────────────────────────────────────────────
+function TeamCompareView({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: string[] }) {
+  const allTeams = useMemo(() => [...new Set(allSubs.map(s => s.team))].sort(), [allSubs]);
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [teamA, setTeamA] = useState(() => allTeams[0] ?? "");
+  const [teamB, setTeamB] = useState(() => allTeams[1] ?? "");
+
+  // Keep team selectors valid as data loads
+  useEffect(() => {
+    if (!teamA && allTeams[0]) setTeamA(allTeams[0]);
+    if (!teamB && allTeams[1]) setTeamB(allTeams[1]);
+  }, [allTeams]);
+
+  const filteredSubs = selectedMonth === "all" ? allSubs : allSubs.filter(s => getMonth(s) === selectedMonth);
+  const subsA = filteredSubs.filter(s => s.team === teamA);
+  const subsB = filteredSubs.filter(s => s.team === teamB);
+
+  function toolStats(subs: Submission[], tool: string) {
+    const pcts = subs.flatMap(sub => {
+      const tools = parseTools(sub.tools);
+      return tools[tool] ? [calcScore(tools[tool]).pct] : [];
+    });
+    if (!pcts.length) return null;
+    const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+    return { avg, grade: pctToGrade(avg), count: pcts.length };
+  }
+
+  function overallAvg(subs: Submission[]) {
+    const pcts: number[] = [];
+    subs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      Object.keys(tools).forEach(t => pcts.push(calcScore(tools[t]).pct));
+    });
+    if (!pcts.length) return null;
+    const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+    return { avg, grade: pctToGrade(avg) };
+  }
+
+  function avgMetric(subs: Submission[], tool: string, key: string) {
+    const vals = subs.flatMap(sub => {
+      const tools = parseTools(sub.tools);
+      return tools[tool] ? [tools[tool][key] ?? 0] : [];
+    });
+    if (!vals.length) return null;
+    return Math.round(vals.reduce((a: number, b: number) => a + b, 0) / vals.length * 10) / 10;
+  }
+
+  const ovA = overallAvg(subsA);
+  const ovB = overallAvg(subsB);
+
+  function Winner({ a, b }: { a: number | undefined; b: number | undefined }) {
+    if (a === undefined || b === undefined) return <span className="text-muted-foreground">—</span>;
+    if (a > b) return <span className="text-emerald-600 font-semibold">+{a - b}%</span>;
+    if (b > a) return <span className="text-red-500 font-semibold">-{b - a}%</span>;
+    return <span className="text-muted-foreground">Tied</span>;
+  }
+
+  if (allTeams.length < 2) {
+    return (
+      <div className="bg-card border border-border rounded-sm p-8 text-center text-sm text-muted-foreground">
+        You need at least 2 teams with submissions to compare.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Month filter */}
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <span className="text-xs text-muted-foreground uppercase tracking-wider" style={{ fontFamily: "'Geist Mono', monospace" }}>Month</span>
+        <div className="flex gap-1.5 flex-wrap">
+          <button onClick={() => setSelectedMonth("all")}
+            className={cn("text-[11px] px-3 py-1 rounded-full border transition-colors",
+              selectedMonth === "all" ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
+            )} style={{ fontFamily: "'Geist Mono', monospace" }}>All</button>
+          {allMonths.map(m => (
+            <button key={m} onClick={() => setSelectedMonth(m)}
+              className={cn("text-[11px] px-3 py-1 rounded-full border transition-colors",
+                selectedMonth === m ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
+              )} style={{ fontFamily: "'Geist Mono', monospace" }}>{fmtMonth(m)}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Team selectors */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {([["A", teamA, setTeamA], ["B", teamB, setTeamB]] as const).map(([label, val, set]) => {
+          const ov = label === "A" ? ovA : ovB;
+          const count = label === "A" ? subsA.length : subsB.length;
+          return (
+            <div key={label as string} className="bg-card border border-border rounded-sm p-4">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>Team {label as string}</p>
+              <select value={val as string} onChange={e => (set as (v: string) => void)(e.target.value)}
+                className="w-full px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none">
+                {allTeams.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground mt-2">
+                {count} submission{count !== 1 ? "s" : ""}
+                {ov ? ` · Avg ${ov.grade} (${ov.avg}%)` : ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Per-tool comparison table */}
+      <div className="bg-card border border-border rounded-sm overflow-hidden mb-4">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-secondary/40">
+              <th className="text-left px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Tool</th>
+              <th className="text-center px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">{teamA || "Team A"}</th>
+              <th className="text-center px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">{teamB || "Team B"}</th>
+              <th className="text-center px-4 py-3 text-xs text-muted-foreground uppercase tracking-wider font-medium">Diff (A–B)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TOOL_KEYS.map(t => {
+              const a = toolStats(subsA, t);
+              const b = toolStats(subsB, t);
+              return (
+                <tr key={t} className="border-b border-border last:border-0">
+                  <td className="px-4 py-3">
+                    <span className={cn("pill-" + t, "text-xs font-semibold px-2.5 py-0.5 rounded-full")}>{TOOLS[t]}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {a ? <><span className={cn("text-lg font-medium", gradeClass(a.grade))} style={{ fontFamily: "'Fraunces', serif" }}>{a.grade}</span><span className="text-xs text-muted-foreground ml-1">({a.avg}%)</span></> : <span className="text-xs text-muted-foreground">No data</span>}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {b ? <><span className={cn("text-lg font-medium", gradeClass(b.grade))} style={{ fontFamily: "'Fraunces', serif" }}>{b.grade}</span><span className="text-xs text-muted-foreground ml-1">({b.avg}%)</span></> : <span className="text-xs text-muted-foreground">No data</span>}
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm">
+                    <Winner a={a?.avg} b={b?.avg} />
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="bg-secondary/30">
+              <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Overall</td>
+              <td className="px-4 py-3 text-center">
+                {ovA ? <><span className={cn("text-lg font-medium", gradeClass(ovA.grade))} style={{ fontFamily: "'Fraunces', serif" }}>{ovA.grade}</span><span className="text-xs text-muted-foreground ml-1">({ovA.avg}%)</span></> : "—"}
+              </td>
+              <td className="px-4 py-3 text-center">
+                {ovB ? <><span className={cn("text-lg font-medium", gradeClass(ovB.grade))} style={{ fontFamily: "'Fraunces', serif" }}>{ovB.grade}</span><span className="text-xs text-muted-foreground ml-1">({ovB.avg}%)</span></> : "—"}
+              </td>
+              <td className="px-4 py-3 text-center text-sm">
+                <Winner a={ovA?.avg} b={ovB?.avg} />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Per-tool metric breakdown */}
+      {TOOL_KEYS.map(t => {
+        const a = toolStats(subsA, t);
+        const b = toolStats(subsB, t);
+        if (!a && !b) return null;
+        return (
+          <div key={t} className="bg-card border border-border rounded-sm p-4 mb-3">
+            <span className={cn("pill-" + t, "text-xs font-semibold px-2.5 py-0.5 rounded-full mb-3 inline-block")}>{TOOLS[t]}</span>
+            <div className="space-y-2">
+              {(["freq", "time", "impact", "adopt"] as MetricKey[]).map(m => {
+                const av = avgMetric(subsA, t, m);
+                const bv = avgMetric(subsB, t, m);
+                const label = { freq: "Frequency", time: "Time saved", impact: "Impact", adopt: "Adoption" }[m];
+                return (
+                  <div key={m} className="grid grid-cols-[120px_80px_80px_60px] gap-2 items-center text-xs">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="text-right font-mono">{av !== null ? av.toFixed(1) : "—"}</span>
+                    <span className="text-right font-mono text-muted-foreground">{bv !== null ? bv.toFixed(1) : "—"}</span>
+                    <span className="text-right font-semibold">
+                      {av !== null && bv !== null ? (
+                        av - bv > 0 ? <span className="text-emerald-600">+{(av - bv).toFixed(1)}</span> :
+                        av - bv < 0 ? <span className="text-red-500">{(av - bv).toFixed(1)}</span> :
+                        <span className="text-muted-foreground">—</span>
+                      ) : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

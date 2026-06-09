@@ -82,6 +82,18 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json(sub);
   });
 
+  app.patch("/api/submissions/:id", requireAdmin, async (req, res) => {
+    const { name, team, notes } = req.body ?? {};
+    const data: { name?: string; team?: string; notes?: string } = {};
+    if (typeof name === "string" && name.trim()) data.name = name.trim();
+    if (typeof team === "string" && team.trim()) data.team = team.trim();
+    if (typeof notes === "string") data.notes = notes;
+    if (Object.keys(data).length === 0) return res.status(400).json({ error: "No valid fields to update" });
+    const sub = await storage.updateSubmission(req.params.id, data);
+    if (!sub) return res.status(404).json({ error: "Not found" });
+    res.json(sub);
+  });
+
   app.patch("/api/submissions/:id/ov", requireAdmin, async (req, res) => {
     const { tool, value } = req.body ?? {};
     const v = parseInt(value);
