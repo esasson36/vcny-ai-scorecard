@@ -57,6 +57,10 @@ export default function AdminPanel({ onLogout }: Props) {
     queryKey: ["/api/headcounts"],
   });
 
+  const { data: employees = [] } = useQuery<{ name: string; team: string }[]>({
+    queryKey: ["/api/employees"],
+  });
+
   const setHeadcountMutation = useMutation({
     mutationFn: async ({ team, count }: { team: string; count: number }) => {
       await apiRequest("POST", "/api/headcounts", { team, count });
@@ -236,6 +240,7 @@ export default function AdminPanel({ onLogout }: Props) {
             isClearingAll={clearAllMutation.isPending}
             headcounts={headcounts}
             onSetHeadcount={(team, count) => setHeadcountMutation.mutate({ team, count })}
+            employees={employees}
           />
         )}
 
@@ -289,13 +294,14 @@ export default function AdminPanel({ onLogout }: Props) {
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOpen, onOpenPerson, onClearAll, isClearingAll, headcounts, onSetHeadcount }: {
+function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOpen, onOpenPerson, onClearAll, isClearingAll, headcounts, onSetHeadcount, employees }: {
   subs: Submission[]; allSubs: Submission[]; allMonths: string[];
   selectedMonth: string; onMonthChange: (m: string) => void;
   onOpen: (id: string) => void; onOpenPerson: (name: string) => void;
   onClearAll: () => void; isClearingAll: boolean;
   headcounts: Record<string, number>;
   onSetHeadcount: (team: string, count: number) => void;
+  employees: { name: string; team: string }[];
 }) {
   function avgGradeForMonth(m: string) {
     const msubs = m === "all" ? allSubs : allSubs.filter(s => getMonth(s) === m);
@@ -355,7 +361,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
       </div>
 
       {/* Response rate */}
-      <ResponseRate subs={subs} headcounts={headcounts} onSetHeadcount={onSetHeadcount} />
+      <ResponseRate subs={subs} headcounts={headcounts} onSetHeadcount={onSetHeadcount} employees={employees} />
 
       {/* Submissions list */}
       <div className="flex items-center justify-between mb-2">
@@ -430,6 +436,35 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
           })}
         </div>
       )}
+
+      {/* Not yet submitted */}
+      {employees.length > 0 && (() => {
+        const submittedNames = new Set(subs.map(s => s.name.toLowerCase().trim()));
+        const missing = employees.filter(e => !submittedNames.has(e.name.toLowerCase().trim()));
+        if (missing.length === 0) return (
+          <div className="mt-4 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/40 rounded-sm px-4 py-3">
+            <span>✓</span>
+            <span>Everyone has submitted{selectedMonth !== "all" ? ` for ${fmtMonth(selectedMonth)}` : ""}.</span>
+          </div>
+        );
+        return (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                Not yet submitted{selectedMonth !== "all" ? ` · ${fmtMonth(selectedMonth)}` : ""}
+              </h2>
+              <span className="text-[11px] font-mono text-muted-foreground">{missing.length} of {employees.length}</span>
+            </div>
+            <div className="bg-card border border-border rounded-sm px-4 py-3">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {missing.map(e => (
+                  <span key={e.name} className="text-sm text-foreground/80">{e.name}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1046,13 +1081,24 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
 }
 
 // ── Response Rate ─────────────────────────────────────────────────────────────
-function ResponseRate({ subs, headcounts, onSetHeadcount }: {
+function ResponseRate({ subs, headcounts, onSetHeadcount, employees }: {
   subs: Submission[];
   headcounts: Record<string, number>;
   onSetHeadcount: (team: string, count: number) => void;
+  employees: { name: string; team: string }[];
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+
+  // If employees have team assignments, derive headcounts from them automatically
+  const employeeHeadcounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    employees.forEach(e => {
+      if (e.team) counts[e.team] = (counts[e.team] ?? 0) + 1;
+    });
+    return counts;
+  }, [employees]);
+  const hasTeamData = Object.keys(employeeHeadcounts).length > 0;
 
   // Count unique respondents per team in this view
   const respondedPerTeam = new Map<string, Set<string>>();
@@ -1061,19 +1107,22 @@ function ResponseRate({ subs, headcounts, onSetHeadcount }: {
     respondedPerTeam.get(sub.team)!.add(sub.name);
   });
 
-  const teams = Array.from(new Set([...Object.keys(headcounts), ...Array.from(respondedPerTeam.keys())])).sort();
+  const effectiveHeadcounts = hasTeamData ? employeeHeadcounts : headcounts;
+  const teams = Array.from(new Set([...Object.keys(effectiveHeadcounts), ...Array.from(respondedPerTeam.keys())])).sort();
   if (teams.length === 0) return null;
 
   return (
     <div className="bg-card border border-border rounded-sm p-4 mb-5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Response rate</h3>
-        <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Click count to edit headcount</span>
+        {!hasTeamData && (
+          <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Click count to edit headcount</span>
+        )}
       </div>
       <div className="space-y-2.5">
         {teams.map(team => {
           const responded = respondedPerTeam.get(team)?.size ?? 0;
-          const total = headcounts[team] ?? 0;
+          const total = effectiveHeadcounts[team] ?? 0;
           const pct = total > 0 ? Math.round((responded / total) * 100) : null;
           return (
             <div key={team} className="grid grid-cols-[120px_1fr_80px] gap-3 items-center">
@@ -1088,7 +1137,7 @@ function ResponseRate({ subs, headcounts, onSetHeadcount }: {
               <div className="text-right text-xs font-mono flex items-center justify-end gap-1">
                 <span className="font-semibold">{responded}</span>
                 <span className="text-muted-foreground">/</span>
-                {editing === team ? (
+                {!hasTeamData && editing === team ? (
                   <input
                     type="number" min={0} value={draft}
                     onChange={e => setDraft(e.target.value)}
@@ -1097,11 +1146,13 @@ function ResponseRate({ subs, headcounts, onSetHeadcount }: {
                     className="w-10 text-center border border-border rounded-sm bg-background text-foreground focus:border-foreground focus:outline-none px-1"
                     autoFocus
                   />
-                ) : (
+                ) : !hasTeamData ? (
                   <button onClick={() => { setEditing(team); setDraft(String(total)); }}
                     className="text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
                     {total > 0 ? total : "?"}
                   </button>
+                ) : (
+                  <span className="text-muted-foreground">{total}</span>
                 )}
                 {pct !== null && <span className="text-muted-foreground ml-1">({pct}%)</span>}
               </div>

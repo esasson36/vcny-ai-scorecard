@@ -53,6 +53,7 @@ export interface IStorage {
   checkDuplicate(name: string, team: string, month: string): Promise<boolean>;
   getHeadcounts(): Promise<Record<string, number>>;
   setHeadcount(team: string, count: number): Promise<void>;
+  getEmployees(): Promise<{ name: string; team: string }[]>;
 }
 
 export const storage: IStorage = {
@@ -162,5 +163,14 @@ export const storage: IStorage = {
       .from("headcounts")
       .upsert({ team, count }, { onConflict: "team" });
     if (error) throw error;
+  },
+
+  async getEmployees(): Promise<{ name: string; team: string }[]> {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("name, team")
+      .order("name");
+    if (error) throw error;
+    return (data as { name: string; team: string }[]) ?? [];
   },
 };

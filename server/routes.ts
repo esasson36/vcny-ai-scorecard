@@ -116,6 +116,11 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json({ ok: true, deleted: count });
   });
 
+  // ── Employees (admin only) ──────────────────────────────────────────
+  app.get("/api/employees", requireAdmin, async (_req, res) => {
+    res.json(await storage.getEmployees());
+  });
+
   // ── Headcounts (admin only) ──────────────────────────────────────────
   app.get("/api/headcounts", requireAdmin, async (_req, res) => {
     res.json(await storage.getHeadcounts());
