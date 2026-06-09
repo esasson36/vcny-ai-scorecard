@@ -361,7 +361,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
       </div>
 
       {/* Response rate */}
-      <ResponseRate subs={subs} headcounts={headcounts} onSetHeadcount={onSetHeadcount} employees={employees} />
+      <ResponseRate subs={subs} allSubs={allSubs} />
 
       {/* Submissions list */}
       <div className="flex items-center justify-between mb-2">
@@ -1081,51 +1081,46 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
 }
 
 // ── Response Rate ─────────────────────────────────────────────────────────────
-function ResponseRate({ subs, headcounts, onSetHeadcount, employees }: {
-  subs: Submission[];
-  headcounts: Record<string, number>;
-  onSetHeadcount: (team: string, count: number) => void;
-  employees: { name: string; team: string }[];
+// Total per team = unique names who have EVER submitted from that team.
+// Each new submitter is automatically added to their team's count.
+function ResponseRate({ subs, allSubs }: {
+  subs: Submission[];   // current month (or all) — who responded
+  allSubs: Submission[]; // all time — who is "known" per team
 }) {
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-
-  // If employees have team assignments, derive headcounts from them automatically
-  const employeeHeadcounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    employees.forEach(e => {
-      if (e.team) counts[e.team] = (counts[e.team] ?? 0) + 1;
+  // Known members per team: every unique name that has ever submitted as that team
+  const knownPerTeam = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    allSubs.forEach(sub => {
+      if (!map.has(sub.team)) map.set(sub.team, new Set());
+      map.get(sub.team)!.add(sub.name);
     });
-    return counts;
-  }, [employees]);
-  const hasTeamData = Object.keys(employeeHeadcounts).length > 0;
+    return map;
+  }, [allSubs]);
 
-  // Count unique respondents per team in this view
-  const respondedPerTeam = new Map<string, Set<string>>();
-  subs.forEach(sub => {
-    if (!respondedPerTeam.has(sub.team)) respondedPerTeam.set(sub.team, new Set());
-    respondedPerTeam.get(sub.team)!.add(sub.name);
-  });
+  // Who responded in the current view
+  const respondedPerTeam = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    subs.forEach(sub => {
+      if (!map.has(sub.team)) map.set(sub.team, new Set());
+      map.get(sub.team)!.add(sub.name);
+    });
+    return map;
+  }, [subs]);
 
-  const effectiveHeadcounts = hasTeamData ? employeeHeadcounts : headcounts;
-  const teams = Array.from(new Set([...Object.keys(effectiveHeadcounts), ...Array.from(respondedPerTeam.keys())])).sort();
+  const teams = [...new Set([...knownPerTeam.keys(), ...respondedPerTeam.keys()])].sort();
   if (teams.length === 0) return null;
 
   return (
     <div className="bg-card border border-border rounded-sm p-4 mb-5">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Response rate</h3>
-        {!hasTeamData && (
-          <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Click count to edit headcount</span>
-        )}
-      </div>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3"
+        style={{ fontFamily: "'Geist Mono', monospace" }}>Response rate</h3>
       <div className="space-y-2.5">
         {teams.map(team => {
           const responded = respondedPerTeam.get(team)?.size ?? 0;
-          const total = effectiveHeadcounts[team] ?? 0;
+          const total = knownPerTeam.get(team)?.size ?? 0;
           const pct = total > 0 ? Math.round((responded / total) * 100) : null;
           return (
-            <div key={team} className="grid grid-cols-[120px_1fr_80px] gap-3 items-center">
+            <div key={team} className="grid grid-cols-[120px_1fr_60px] gap-3 items-center">
               <span className="text-sm truncate">{team}</span>
               <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
                 {pct !== null && (
@@ -1134,27 +1129,8 @@ function ResponseRate({ subs, headcounts, onSetHeadcount, employees }: {
                   )} style={{ width: `${pct}%` }} />
                 )}
               </div>
-              <div className="text-right text-xs font-mono flex items-center justify-end gap-1">
-                <span className="font-semibold">{responded}</span>
-                <span className="text-muted-foreground">/</span>
-                {!hasTeamData && editing === team ? (
-                  <input
-                    type="number" min={0} value={draft}
-                    onChange={e => setDraft(e.target.value)}
-                    onBlur={() => { onSetHeadcount(team, parseInt(draft) || 0); setEditing(null); }}
-                    onKeyDown={e => { if (e.key === "Enter") { onSetHeadcount(team, parseInt(draft) || 0); setEditing(null); } }}
-                    className="w-10 text-center border border-border rounded-sm bg-background text-foreground focus:border-foreground focus:outline-none px-1"
-                    autoFocus
-                  />
-                ) : !hasTeamData ? (
-                  <button onClick={() => { setEditing(team); setDraft(String(total)); }}
-                    className="text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
-                    {total > 0 ? total : "?"}
-                  </button>
-                ) : (
-                  <span className="text-muted-foreground">{total}</span>
-                )}
-                {pct !== null && <span className="text-muted-foreground ml-1">({pct}%)</span>}
+              <div className="text-right text-xs font-mono text-muted-foreground">
+                {responded}/{total}{pct !== null ? ` (${pct}%)` : ""}
               </div>
             </div>
           );
