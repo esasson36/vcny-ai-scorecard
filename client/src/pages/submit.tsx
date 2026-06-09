@@ -278,7 +278,7 @@ function SliderRow({ toolKey, metricKey, label, value, onChange }: {
   toolKey: string; metricKey: MetricKey; label: string; value: number; onChange: (v: number) => void;
 }) {
   const intensity = value / 5;
-  const labelColor = intensity >= 0.6 ? "var(--good)" : intensity >= 0.4 ? "var(--warn)" : "hsl(var(--muted-foreground))";
+  const labelColor = intensity >= 0.6 ? "var(--good)" : intensity >= 0.4 ? "var(--warn)" : "var(--bad)";
   const pct = intensity * 100;
   const trackColor = TOOL_TRACK_COLOR[toolKey] ?? "hsl(var(--foreground))";
   return (
