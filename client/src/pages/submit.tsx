@@ -14,6 +14,7 @@ const DEFAULT_SCORES: ToolScores = { freq: 3, time: 2, impact: 3, adopt: 2 };
 export default function SubmitPage() {
   const [name, setName] = useState("");
   const [team, setTeam] = useState("");
+  const [otherTeam, setOtherTeam] = useState("");
   const [selected, setSelected] = useState<Record<ToolKey, boolean>>({ cgt: false, cla: false, per: false });
   const [scores, setScores] = useState<Record<ToolKey, ToolScores>>({
     cgt: { ...DEFAULT_SCORES },
@@ -27,17 +28,20 @@ export default function SubmitPage() {
   const [dupWarning, setDupWarning] = useState("");
   const [dupChecked, setDupChecked] = useState(""); // "name|team" last checked
 
+  // Resolved team name — if "Other" was chosen, use the typed value instead
+  const effectiveTeam = team === "Other" ? otherTeam.trim() : team;
+
   // Check for duplicate when name + team are both filled
   useEffect(() => {
-    const key = `${name.trim()}|${team}`;
-    if (!name.trim() || !team || key === dupChecked) return;
+    const key = `${name.trim()}|${effectiveTeam}`;
+    if (!name.trim() || !effectiveTeam || key === dupChecked) return;
     const timer = setTimeout(async () => {
       try {
-        const res = await apiRequest("GET", `/api/submissions/check-duplicate?name=${encodeURIComponent(name.trim())}&team=${encodeURIComponent(team)}`);
+        const res = await apiRequest("GET", `/api/submissions/check-duplicate?name=${encodeURIComponent(name.trim())}&team=${encodeURIComponent(effectiveTeam)}`);
         const data = await res.json();
         if (data.isDuplicate) {
           const monthLabel = new Date(data.month + "-02").toLocaleString("default", { month: "long", year: "numeric" });
-          setDupWarning(`Heads up: ${name.trim()} from ${team} already submitted for ${monthLabel}. You can still submit again if needed.`);
+          setDupWarning(`Heads up: ${name.trim()} from ${effectiveTeam} already submitted for ${monthLabel}. You can still submit again if needed.`);
         } else {
           setDupWarning("");
         }
@@ -45,7 +49,7 @@ export default function SubmitPage() {
       } catch {}
     }, 600);
     return () => clearTimeout(timer);
-  }, [name, team]);
+  }, [name, effectiveTeam]);
 
   const mutation = useMutation({
     mutationFn: async (body: object) => {
@@ -64,11 +68,12 @@ export default function SubmitPage() {
   function handleSubmit() {
     setError("");
     if (!name.trim() || !team) { setError("Please add your name and team."); return; }
+    if (team === "Other" && !otherTeam.trim()) { setError("Please enter your team name."); return; }
     const activeTools = TOOL_KEYS.filter(t => selected[t]);
     if (activeTools.length === 0) { setError("Please select at least one tool you use."); return; }
     const tools: Record<string, ToolScores> = {};
     activeTools.forEach(t => { tools[t] = scores[t]; });
-    mutation.mutate({ name: name.trim(), team, tools, useCases, challenges });
+    mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges });
   }
 
   if (submitted) {
@@ -81,7 +86,7 @@ export default function SubmitPage() {
             <p className="text-sm text-muted-foreground mt-2">Your scorecard has been sent to Elie for review. Thanks!</p>
           </div>
           <button
-            onClick={() => { setSubmitted(false); setName(""); setTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); }}
+            onClick={() => { setSubmitted(false); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); }}
             className="text-sm border border-input rounded px-4 py-2 hover:border-foreground transition-colors"
           >
             Submit another
@@ -123,12 +128,22 @@ export default function SubmitPage() {
               <select
                 data-testid="select-team"
                 value={team}
-                onChange={e => setTeam(e.target.value)}
+                onChange={e => { setTeam(e.target.value); setOtherTeam(""); }}
                 className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
               >
                 <option value="">Choose team...</option>
                 {TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+              {team === "Other" && (
+                <input
+                  data-testid="input-other-team"
+                  type="text"
+                  value={otherTeam}
+                  onChange={e => setOtherTeam(e.target.value)}
+                  placeholder="Enter your team name"
+                  className="w-full mt-2 px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+                />
+              )}
             </div>
           </div>
 
