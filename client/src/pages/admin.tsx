@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Submission } from "@shared/schema";
@@ -94,7 +94,7 @@ export default function AdminPanel({ onLogout }: Props) {
   }, [subs]);
 
   // Set default selectedMonth to latest when months load
-  useMemo(() => {
+  useEffect(() => {
     if (selectedMonth === "all" && allMonths.length > 0) {
       setSelectedMonth(allMonths[0]);
       if (!compareA) setCompareA(allMonths[0]);
@@ -1318,7 +1318,7 @@ function SettingsView() {
         </div>
 
         <p className="text-xs text-muted-foreground mt-4">
-          Note: credentials reset if the server restarts. For permanent credentials, update the values in <span className="font-mono">server/routes.ts</span> and redeploy.
+          Note: credentials reset if the server restarts. For permanent credentials, set <span className="font-mono">ADMIN_USER</span> and <span className="font-mono">ADMIN_PASS</span> as environment variables in your Render dashboard.
         </p>
       </div>
     </div>
