@@ -778,14 +778,20 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isU
   // Edit mode for name / team
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
-  const [editTeam, setEditTeam] = useState(sub.team);
+  // If the stored team isn't in the standard list, treat it as a custom "Other" value
+  const STANDARD_TEAMS = ["Marketing","Merchandising","Design","Executive","HR","Sales","Other"];
+  const [editTeam, setEditTeam] = useState(STANDARD_TEAMS.includes(sub.team) ? sub.team : "Other");
+  const [editOtherTeam, setEditOtherTeam] = useState(STANDARD_TEAMS.includes(sub.team) ? "" : sub.team);
 
   // Notes (always editable inline)
   const [notes, setNotes] = useState(sub.notes ?? "");
   const [notesSaved, setNotesSaved] = useState(false);
 
+  const effectiveEditTeam = editTeam === "Other" ? editOtherTeam.trim() : editTeam;
+
   function saveEdit() {
-    onUpdate(sub.id, { name: editName.trim() || sub.name, team: editTeam });
+    if (editTeam === "Other" && !editOtherTeam.trim()) return;
+    onUpdate(sub.id, { name: editName.trim() || sub.name, team: effectiveEditTeam });
     setEditing(false);
   }
 
@@ -819,18 +825,27 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isU
             <input value={editName} onChange={e => setEditName(e.target.value)}
               className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none font-semibold text-lg"
               placeholder="Name" />
-            <select value={editTeam} onChange={e => setEditTeam(e.target.value)}
+            <select value={editTeam} onChange={e => { setEditTeam(e.target.value); setEditOtherTeam(""); }}
               className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none">
-              {["Marketing","Merchandising","Design","Executive","HR","Sales","Other"].map(t => (
+              {STANDARD_TEAMS.map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+            {editTeam === "Other" && (
+              <input
+                type="text"
+                value={editOtherTeam}
+                onChange={e => setEditOtherTeam(e.target.value)}
+                placeholder="Enter team name"
+                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+              />
+            )}
             <div className="flex gap-2">
-              <button onClick={saveEdit} disabled={isUpdating}
+              <button onClick={saveEdit} disabled={isUpdating || (editTeam === "Other" && !editOtherTeam.trim())}
                 className="text-sm bg-foreground text-background px-4 py-1.5 rounded-sm font-medium hover:opacity-85 transition-opacity disabled:opacity-50">
                 {isUpdating ? "Saving…" : "Save"}
               </button>
-              <button onClick={() => { setEditing(false); setEditName(sub.name); setEditTeam(sub.team); }}
+              <button onClick={() => { setEditing(false); setEditName(sub.name); setEditTeam(STANDARD_TEAMS.includes(sub.team) ? sub.team : "Other"); setEditOtherTeam(STANDARD_TEAMS.includes(sub.team) ? "" : sub.team); }}
                 className="text-sm border border-border px-4 py-1.5 rounded-sm hover:border-foreground transition-colors">
                 Cancel
               </button>
