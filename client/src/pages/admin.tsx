@@ -354,7 +354,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
           { label: "Avg Claude", value: toolAvgGrade("cla"), isGrade: true },
           { label: "Avg Perplexity", value: toolAvgGrade("per"), isGrade: true },
         ].map(k => (
-          <div key={k.label} className="bg-card border border-border rounded-sm p-3.5">
+          <div key={k.label} className="kpi-card bg-card border border-border rounded-sm p-3.5">
             <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">{k.label}</div>
             <div className={cn("text-[26px] leading-none font-medium",
               k.isGrade && k.value !== "—" ? gradeClass(k.value) : ""
@@ -1140,9 +1140,9 @@ function ResponseRate({ subs, allSubs }: {
           return (
             <div key={team} className="grid grid-cols-[120px_1fr_60px] gap-3 items-center">
               <span className="text-sm truncate">{team}</span>
-              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
                 {pct !== null && (
-                  <div className={cn("h-full rounded-full transition-all",
+                  <div className={cn("h-full rounded-full transition-all duration-700 ease-out",
                     pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-400"
                   )} style={{ width: `${pct}%` }} />
                 )}

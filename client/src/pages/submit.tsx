@@ -79,15 +79,15 @@ export default function SubmitPage() {
   if (submitted) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="max-w-sm w-full text-center space-y-5">
-          <CheckCircle2 className="w-12 h-12 mx-auto" style={{ color: "var(--good)" }} />
+        <div className="max-w-sm w-full text-center space-y-5 animate-fade-up">
+          <CheckCircle2 className="w-14 h-14 mx-auto animate-pop-in" style={{ color: "var(--good)" }} />
           <div>
-            <h2 className="text-xl font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>Submitted</h2>
+            <h2 className="text-xl font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>All done!</h2>
             <p className="text-sm text-muted-foreground mt-2">Your scorecard has been sent to Elie for review. Thanks!</p>
           </div>
           <button
             onClick={() => { setSubmitted(false); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); }}
-            className="text-sm border border-input rounded px-4 py-2 hover:border-foreground transition-colors"
+            className="text-sm border border-input rounded-sm px-5 py-2 hover:border-foreground hover:bg-foreground hover:text-background transition-all"
           >
             Submit another
           </button>
@@ -148,20 +148,32 @@ export default function SubmitPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-2 tracking-[0.04em]">Which paid AI tools do you currently have?</label>
-            <div className="flex gap-4 flex-wrap">
-              {TOOL_KEYS.map(t => (
-                <label key={t} className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
+            <label className="block text-xs font-medium text-muted-foreground mb-3 tracking-[0.04em]">Which paid AI tools do you currently have?</label>
+            <div className="flex gap-3 flex-wrap">
+              {TOOL_KEYS.map(t => {
+                const colorKey = t === "cgt" ? "chatgpt" : t === "cla" ? "claude" : "perplexity";
+                return (
+                  <button
+                    key={t}
+                    type="button"
                     data-testid={`check-${t}`}
-                    type="checkbox"
-                    checked={selected[t]}
-                    onChange={e => setSelected(prev => ({ ...prev, [t]: e.target.checked }))}
-                    className="w-4 h-4"
-                  />
-                  <span className={cn("pill-"+t, "text-xs font-semibold px-3 py-1 rounded-full")}>{TOOLS[t]}</span>
-                </label>
-              ))}
+                    onClick={() => setSelected(prev => ({ ...prev, [t]: !prev[t] }))}
+                    className={cn(
+                      `tool-card tool-card-${t}`,
+                      selected[t] ? "selected" : "opacity-60 hover:opacity-90"
+                    )}
+                  >
+                    {/* brand dot */}
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: `var(--${colorKey})` }} />
+                    <span className={cn(selected[t] ? `text-[var(--${colorKey}-text)]` : "text-foreground", "text-sm font-semibold")}>
+                      {TOOLS[t]}
+                    </span>
+                    {selected[t] && (
+                      <CheckCircle2 className="w-4 h-4 ml-1 animate-pop-in" style={{ color: `var(--${colorKey})` }} />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -212,7 +224,7 @@ export default function SubmitPage() {
           data-testid="button-submit"
           onClick={handleSubmit}
           disabled={mutation.isPending}
-          className="w-full bg-foreground text-background py-3 rounded-sm font-semibold text-sm hover:opacity-85 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+          className="w-full bg-foreground text-background py-3.5 rounded-sm font-semibold text-sm hover:opacity-90 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {mutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</> : "Submit scorecard"}
         </button>
@@ -238,7 +250,7 @@ function ToolSection({ toolKey, scores, onChange }: {
   ];
 
   return (
-    <div className={cn("border-l-[3px] pl-4 pr-4 py-3.5 mb-4 bg-card rounded-r-sm tool-section-" + toolKey)}>
+    <div className={cn("border-l-[3px] pl-4 pr-4 py-3.5 mb-4 bg-card rounded-r-sm animate-slide-down tool-section-" + toolKey)}>
       <span className={cn("pill-" + toolKey, "inline-block text-xs font-semibold px-3 py-1 rounded-full mb-3")}>{TOOLS[toolKey]}</span>
       <div className="space-y-2.5">
         {metrics.map(({ key, label }) => (
@@ -259,8 +271,10 @@ function ToolSection({ toolKey, scores, onChange }: {
 function SliderRow({ toolKey, metricKey, label, value, onChange }: {
   toolKey: string; metricKey: MetricKey; label: string; value: number; onChange: (v: number) => void;
 }) {
+  const intensity = value / 5; // 0–1
+  const labelColor = intensity >= 0.6 ? "var(--good)" : intensity >= 0.4 ? "var(--warn)" : "hsl(var(--muted-foreground))";
   return (
-    <div className="grid grid-cols-[130px_1fr_100px] gap-3 items-center">
+    <div className="grid grid-cols-[130px_1fr_110px] gap-3 items-center">
       <span className="text-sm font-medium text-foreground">{label}</span>
       <input
         data-testid={`slider-${toolKey}-${metricKey}`}
@@ -270,7 +284,9 @@ function SliderRow({ toolKey, metricKey, label, value, onChange }: {
         onChange={e => onChange(parseInt(e.target.value))}
         className="w-full"
       />
-      <span className="text-sm font-semibold text-right">{LABELS[metricKey][value]}</span>
+      <span className="text-sm font-semibold text-right transition-colors" style={{ color: labelColor }}>
+        {LABELS[metricKey][value]}
+      </span>
     </div>
   );
 }
