@@ -261,7 +261,10 @@ export default function AdminPanel({ onLogout }: Props) {
         )}
 
         {view === "teams" && (
-          <TeamsView allSubs={subs} allMonths={allMonths} />
+          <TeamsView allSubs={subs} allMonths={allMonths}
+            onOpen={id => { setActiveId(id); setView("detail"); }}
+            onOpenPerson={name => { setActivePerson(name); setView("person"); }}
+          />
         )}
 
         {view === "teamcompare" && (
@@ -1141,12 +1144,15 @@ function ResponseRate({ subs, allSubs }: {
 }
 
 // ── Teams View ────────────────────────────────────────────────────────────────
-function TeamsView({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: string[] }) {
+function TeamsView({ allSubs, allMonths, onOpen, onOpenPerson }: {
+  allSubs: Submission[]; allMonths: string[];
+  onOpen: (id: string) => void;
+  onOpenPerson: (name: string) => void;
+}) {
   const [selectedMonth, setSelectedMonth] = useState<string>(allMonths[0] ?? "all");
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
 
   const subs = selectedMonth === "all" ? allSubs : allSubs.filter(s => getMonth(s) === selectedMonth);
-
-  // Group by team
   const teams = [...new Set(subs.map(s => s.team))].sort();
 
   function teamStats(team: string) {
@@ -1175,6 +1181,76 @@ function TeamsView({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: s
     return { tsubs, avg, grade: pctToGrade(avg), toolGrades, useCases, challenges };
   }
 
+  // ── Team drill-down: show all submissions for selectedTeam ──
+  if (selectedTeam) {
+    const teamSubs = subs
+      .filter(s => s.team === selectedTeam)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return (
+      <div>
+        <button onClick={() => setSelectedTeam(null)}
+          className="flex items-center gap-1.5 text-sm border border-border rounded-sm px-3 py-1.5 mb-5 hover:border-foreground transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> All teams
+        </button>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{selectedTeam}</h2>
+          <span className="text-xs text-muted-foreground font-mono">{teamSubs.length} submission{teamSubs.length !== 1 ? "s" : ""}</span>
+        </div>
+        {teamSubs.length === 0 ? (
+          <div className="bg-card border border-border rounded-sm p-8 text-center text-sm text-muted-foreground">
+            No submissions for this month.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {teamSubs.map(sub => {
+              const tools = parseTools(sub.tools);
+              const hasMultiple = allSubs.filter(s => s.name === sub.name).length > 1;
+              return (
+                <div key={sub.id} onClick={() => onOpen(sub.id)}
+                  className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors cursor-pointer">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[15px]">{sub.name}</span>
+                        {hasMultiple && (
+                          <button onClick={e => { e.stopPropagation(); onOpenPerson(sub.name); }}
+                            className="text-[10px] uppercase tracking-wider border border-border rounded-full px-2 py-0.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
+                            style={{ fontFamily: "'Geist Mono', monospace" }}>
+                            Trend →
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {fmtMonth(getMonth(sub))} · Submitted {new Date(sub.timestamp).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); onOpen(sub.id); }}
+                      className="text-xs border border-border rounded-sm px-2.5 py-1 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
+                      View →
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {Object.keys(tools).map(t => {
+                      const sc = calcScore(tools[t]);
+                      const g = pctToGrade(sc.pct);
+                      return (
+                        <span key={t} className={cn("pill-" + t, "text-xs font-semibold px-2.5 py-0.5 rounded-full")}>
+                          {TOOLS[t]} · {g}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Default: team summary cards ──
   if (teams.length === 0) return (
     <div className="bg-card border border-border rounded-sm p-8 text-center text-sm text-muted-foreground">
       No submissions yet.
@@ -1203,16 +1279,17 @@ function TeamsView({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: s
       {/* Trend chart */}
       {allMonths.length > 1 && <TrendChart allSubs={allSubs} allMonths={allMonths} />}
 
-      {/* Team cards */}
+      {/* Team cards — clickable */}
       <div className="space-y-4 mt-5">
         {teams.map(team => {
           const { tsubs, avg, grade, toolGrades, useCases, challenges } = teamStats(team);
           return (
-            <div key={team} className="bg-card border border-border rounded-sm p-5">
+            <div key={team} onClick={() => setSelectedTeam(team)}
+              className="bg-card border border-border rounded-sm p-5 hover:border-foreground/40 transition-colors cursor-pointer">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <h3 className="text-base font-semibold">{team}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{tsubs.length} submission{tsubs.length !== 1 ? "s" : ""}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{tsubs.length} submission{tsubs.length !== 1 ? "s" : ""} · click to view</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground font-mono">{avg}%</span>
