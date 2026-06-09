@@ -100,17 +100,21 @@ export default function SubmitPage() {
     <div className="min-h-screen bg-background py-8 px-5">
       <div className="max-w-[720px] mx-auto">
         {/* Header */}
-        <div className="border-b-2 border-foreground pb-5 mb-8 flex justify-between items-end">
+        <div className="border-b-2 border-foreground pb-5 mb-8 flex justify-between items-end animate-fade-up">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1" style={{ fontFamily: "'Geist Mono', monospace" }}>VCNY · AI Scorecard</p>
             <h1 className="text-3xl font-medium leading-none tracking-tight" style={{ fontFamily: "'Fraunces', serif" }}>Your AI tool feedback</h1>
+            <p className="text-xs text-muted-foreground mt-2">Takes about 2 minutes · helps us decide which tools to keep</p>
           </div>
           <a href="/#/admin" className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors" style={{ fontFamily: "'Geist Mono', monospace" }}>Admin</a>
         </div>
 
         {/* Your details */}
-        <div className="bg-card border border-border rounded-sm p-6 mb-4">
-          <h2 className="text-xl font-medium mb-4" style={{ fontFamily: "'Fraunces', serif" }}>Your details</h2>
+        <div className="bg-card border border-border rounded-sm p-6 mb-4 animate-fade-up" style={{ animationDelay: "60ms" }}>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="section-num">01</span>
+            <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>Your details</h2>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">Your name</label>
@@ -179,12 +183,22 @@ export default function SubmitPage() {
         </div>
 
         {/* Tool sections */}
+        {TOOL_KEYS.some(t => selected[t]) && (
+          <div className="flex items-center gap-3 mb-3 mt-7 animate-fade-up">
+            <span className="section-num">02</span>
+            <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>Rate your tools</h2>
+          </div>
+        )}
         {TOOL_KEYS.filter(t => selected[t]).map(t => (
           <ToolSection key={t} toolKey={t} scores={scores[t]} onChange={(m, v) => setScore(t, m, v)} />
         ))}
 
         {/* Use cases + challenges */}
-        <div className="bg-card border border-border rounded-sm p-6 mb-4">
+        <div className="bg-card border border-border rounded-sm p-6 mb-4 mt-7 animate-fade-up" style={{ animationDelay: "120ms" }}>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="section-num">{TOOL_KEYS.some(t => selected[t]) ? "03" : "02"}</span>
+            <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>In your own words</h2>
+          </div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">Top 1–3 use cases (what do you actually use these for?)</label>
             <textarea
@@ -208,13 +222,13 @@ export default function SubmitPage() {
         </div>
 
         {dupWarning && (
-          <div className="flex items-start gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/40 text-yellow-800 dark:text-yellow-300">
+          <div className="animate-pop-in flex items-start gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/40 text-yellow-800 dark:text-yellow-300">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             {dupWarning}
           </div>
         )}
         {error && (
-          <div className="flex items-center gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-400">
+          <div className="animate-pop-in flex items-center gap-2 text-sm mb-3 px-3 py-2 rounded-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-400">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
@@ -224,9 +238,11 @@ export default function SubmitPage() {
           data-testid="button-submit"
           onClick={handleSubmit}
           disabled={mutation.isPending}
-          className="w-full bg-foreground text-background py-3.5 rounded-sm font-semibold text-sm hover:opacity-90 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
+          className="group w-full bg-foreground text-background py-3.5 rounded-sm font-semibold text-sm hover:opacity-90 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {mutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</> : "Submit scorecard"}
+          {mutation.isPending
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</>
+            : <>Submit scorecard<span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span></>}
         </button>
 
         <div className="mt-10 pt-5 border-t border-border text-center text-[11px] uppercase tracking-[0.08em] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>
@@ -282,8 +298,8 @@ function SliderRow({ toolKey, metricKey, label, value, onChange }: {
   const pct = intensity * 100;
   const trackColor = TOOL_TRACK_COLOR[toolKey] ?? "hsl(var(--foreground))";
   return (
-    <div className="grid grid-cols-[130px_1fr_110px] gap-3 items-center">
-      <span className="text-sm font-medium text-foreground">{label}</span>
+    <div className="grid grid-cols-[96px_1fr_88px] sm:grid-cols-[130px_1fr_110px] gap-2.5 sm:gap-3 items-center">
+      <span className="text-[13px] sm:text-sm font-medium text-foreground">{label}</span>
       <input
         data-testid={`slider-${toolKey}-${metricKey}`}
         type="range"
@@ -295,7 +311,7 @@ function SliderRow({ toolKey, metricKey, label, value, onChange }: {
           background: `linear-gradient(to right, ${trackColor} 0%, ${trackColor} ${pct}%, hsl(var(--input)) ${pct}%, hsl(var(--input)) 100%)`,
         }}
       />
-      <span className="text-sm font-semibold text-right transition-colors" style={{ color: labelColor }}>
+      <span className="text-[12px] sm:text-sm font-semibold text-right transition-colors" style={{ color: labelColor }}>
         {LABELS[metricKey][value]}
       </span>
     </div>

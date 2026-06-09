@@ -264,3 +264,38 @@ input[type=range]::-moz-range-thumb {
 input:focus-visible, textarea:focus-visible, select:focus-visible {
   box-shadow: 0 0 0 3px hsl(var(--foreground) / 0.1);
 }
+
+/* Text selection matches the editorial palette */
+::selection {
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+}
+
+/* Lift effect for clickable cards */
+.card-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.card-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px hsl(var(--foreground) / 0.08);
+}
+.card-lift:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px hsl(var(--foreground) / 0.06);
+}
+
+/* Editorial section number — small mono digits beside headings */
+.section-num {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 9999px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

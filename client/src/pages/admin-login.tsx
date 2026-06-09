@@ -20,7 +20,7 @@ export default function AdminLogin({ onLogin }: Props) {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm animate-fade-up">
         <div className="text-center mb-8">
           <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>VCNY · AI Scorecard</p>
           <h1 className="text-2xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>Admin access</h1>
@@ -29,7 +29,7 @@ export default function AdminLogin({ onLogin }: Props) {
         </div>
 
         {mutation.isError && (
-          <div className="flex items-center gap-2 text-sm mb-4 px-3 py-2 rounded-sm bg-red-50 border border-red-200 text-red-700">
+          <div className="flex items-center gap-2 text-sm mb-4 px-3 py-2 rounded-sm bg-red-50 border border-red-200 text-red-700 animate-pop-in">
             <AlertCircle className="w-4 h-4 shrink-0" />
             Incorrect username or password
           </div>
@@ -63,7 +63,7 @@ export default function AdminLogin({ onLogin }: Props) {
             data-testid="button-login"
             onClick={() => mutation.mutate()}
             disabled={mutation.isPending}
-            className="w-full bg-foreground text-background py-2.5 rounded-sm font-semibold text-sm hover:opacity-85 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full bg-foreground text-background py-2.5 rounded-sm font-semibold text-sm hover:opacity-85 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {mutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Signing in...</> : "Unlock"}
           </button>

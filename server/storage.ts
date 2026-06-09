@@ -89,6 +89,7 @@ export const storage: IStorage = {
       challenges: data.challenges ?? "",
       timestamp: now,
       month,
+      notes: "",
     };
     const { error } = await supabase.from("submissions").insert(row);
     if (error) throw error;

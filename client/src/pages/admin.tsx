@@ -6,7 +6,7 @@ import {
   TOOLS, TOOL_KEYS, LABELS, type ToolKey, type MetricKey,
   calcScore, pctToGrade, gradeAction, gradeClass,
 } from "@/lib/scorecard";
-import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer } from "lucide-react";
+import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
 import { getCoachSuggestions } from "@/lib/scorecard";
@@ -187,6 +187,7 @@ export default function AdminPanel({ onLogout }: Props) {
     compare: "Month comparison",
     leaderboard: "Leaderboard",
     teams: "Teams",
+    teamcompare: "Team vs Team",
     settings: "Settings",
   };
 
@@ -238,6 +239,7 @@ export default function AdminPanel({ onLogout }: Props) {
           </div>
         )}
 
+        <div key={view} className="animate-fade-up">
         {view === "dashboard" && (
           <DashView
             subs={sorted} allSubs={subs} allMonths={allMonths}
@@ -302,6 +304,7 @@ export default function AdminPanel({ onLogout }: Props) {
             onBack={() => setView("dashboard")}
           />
         )}
+        </div>
       </div>
     </div>
   );
@@ -358,7 +361,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
           { label: "Submissions", value: String(subs.length) },
           { label: "Avg ChatGPT", value: toolAvgGrade("cgt"), isGrade: true },
@@ -391,12 +394,15 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
       </div>
 
       {subs.length === 0 ? (
-        <div className="bg-card border border-border rounded-sm p-8 text-center text-sm text-muted-foreground">
-          {allSubs.length === 0 ? "No submissions yet. Share the form URL with your team." : "No submissions for this month."}
+        <div className="bg-card border border-border rounded-sm p-10 text-center">
+          <Inbox className="w-8 h-8 mx-auto text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground">
+            {allSubs.length === 0 ? "No submissions yet. Share the form URL with your team." : "No submissions for this month."}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {subs.map(sub => {
+          {subs.map((sub, i) => {
             const tools = parseTools(sub.tools);
             const hasMultiple = allSubs.filter(s => s.name === sub.name).length > 1;
             const prevSub = allSubs
@@ -405,7 +411,9 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
             const delta = prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
             const overallG = pctToGrade(subOverallPct(sub));
             return (
-              <div key={sub.id} onClick={() => onOpen(sub.id)} className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors cursor-pointer">
+              <div key={sub.id} onClick={() => onOpen(sub.id)}
+                className="card-lift animate-fade-up bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 cursor-pointer"
+                style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}>
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center gap-2">
@@ -1239,7 +1247,7 @@ function TeamsView({ allSubs, allMonths, onOpen, onOpenPerson }: {
               const hasMultiple = allSubs.filter(s => s.name === sub.name).length > 1;
               return (
                 <div key={sub.id} onClick={() => onOpen(sub.id)}
-                  className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors cursor-pointer">
+                  className="card-lift bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 cursor-pointer">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
@@ -1316,7 +1324,7 @@ function TeamsView({ allSubs, allMonths, onOpen, onOpenPerson }: {
           const { tsubs, avg, grade, toolGrades, useCases, challenges } = teamStats(team);
           return (
             <div key={team} onClick={() => setSelectedTeam(team)}
-              className="bg-card border border-border rounded-sm p-5 hover:border-foreground/40 transition-colors cursor-pointer">
+              className="card-lift bg-card border border-border rounded-sm p-5 hover:border-foreground/40 cursor-pointer">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <h3 className="text-base font-semibold">{team}</h3>
