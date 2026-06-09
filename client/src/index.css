@@ -242,3 +242,25 @@ input[type=range]::-moz-range-thumb {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px hsl(var(--foreground) / 0.07);
 }
+
+/* Grade badge pills */
+.grade-badge-A { background: color-mix(in srgb, var(--good) 13%, transparent); color: var(--good); border-radius: 6px; }
+.grade-badge-B { background: color-mix(in srgb, #639922 13%, transparent); color: #639922; border-radius: 6px; }
+.grade-badge-C { background: color-mix(in srgb, var(--warn) 13%, transparent); color: var(--warn); border-radius: 6px; }
+.grade-badge-D { background: color-mix(in srgb, var(--claude) 13%, transparent); color: var(--claude); border-radius: 6px; }
+.grade-badge-F { background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); border-radius: 6px; }
+
+/* Bar grow animation — scaleX from 0 on left origin */
+@keyframes barScaleIn {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.animate-bar-grow {
+  transform-origin: left;
+  animation: barScaleIn 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Enhanced focus ring on form fields */
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  box-shadow: 0 0 0 3px hsl(var(--foreground) / 0.1);
+}

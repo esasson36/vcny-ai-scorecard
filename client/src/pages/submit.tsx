@@ -268,11 +268,19 @@ function ToolSection({ toolKey, scores, onChange }: {
   );
 }
 
+const TOOL_TRACK_COLOR: Record<string, string> = {
+  cgt: "var(--chatgpt)",
+  cla: "var(--claude)",
+  per: "var(--perplexity)",
+};
+
 function SliderRow({ toolKey, metricKey, label, value, onChange }: {
   toolKey: string; metricKey: MetricKey; label: string; value: number; onChange: (v: number) => void;
 }) {
-  const intensity = value / 5; // 0–1
+  const intensity = value / 5;
   const labelColor = intensity >= 0.6 ? "var(--good)" : intensity >= 0.4 ? "var(--warn)" : "hsl(var(--muted-foreground))";
+  const pct = intensity * 100;
+  const trackColor = TOOL_TRACK_COLOR[toolKey] ?? "hsl(var(--foreground))";
   return (
     <div className="grid grid-cols-[130px_1fr_110px] gap-3 items-center">
       <span className="text-sm font-medium text-foreground">{label}</span>
@@ -283,6 +291,9 @@ function SliderRow({ toolKey, metricKey, label, value, onChange }: {
         value={value}
         onChange={e => onChange(parseInt(e.target.value))}
         className="w-full"
+        style={{
+          background: `linear-gradient(to right, ${trackColor} 0%, ${trackColor} ${pct}%, hsl(var(--input)) ${pct}%, hsl(var(--input)) 100%)`,
+        }}
       />
       <span className="text-sm font-semibold text-right transition-colors" style={{ color: labelColor }}>
         {LABELS[metricKey][value]}

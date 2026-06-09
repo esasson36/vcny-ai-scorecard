@@ -21,6 +21,15 @@ function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
 }
 
+function GradeBadge({ grade, className = "" }: { grade: string; className?: string }) {
+  return (
+    <span className={cn(`grade-badge-${grade}`, "font-medium leading-none inline-block", className)}
+      style={{ fontFamily: "'Fraunces', serif" }}>
+      {grade}
+    </span>
+  );
+}
+
 function subOverallPct(sub: Submission): number {
   const tools = Object.values(parseTools(sub.tools)) as any[];
   if (!tools.length) return 0;
@@ -215,11 +224,13 @@ export default function AdminPanel({ onLogout }: Props) {
 
         {/* Nav tabs */}
         {(["dashboard", "compare", "leaderboard", "teams", "teamcompare", "settings"] as View[]).includes(view) && (
-          <div className="flex gap-1 mb-6 border-b border-border pb-0 overflow-x-auto">
+          <div className="flex gap-1.5 mb-6 pb-1 overflow-x-auto flex-wrap">
             {(["dashboard", "leaderboard", "teams", "compare", "teamcompare", "settings"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
-                className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap",
-                  view === v ? "border-foreground text-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground"
+                className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-1.5 rounded-md transition-all duration-200 whitespace-nowrap",
+                  view === v
+                    ? "bg-foreground text-background font-semibold"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 )} style={{ fontFamily: "'Geist Mono', monospace" }}>
                 {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : v === "compare" ? "Compare" : v === "teamcompare" ? "Team vs Team" : "Settings"}
               </button>
@@ -356,9 +367,10 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
         ].map(k => (
           <div key={k.label} className="kpi-card bg-card border border-border rounded-sm p-3.5">
             <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">{k.label}</div>
-            <div className={cn("text-[26px] leading-none font-medium",
-              k.isGrade && k.value !== "—" ? gradeClass(k.value) : ""
-            )} style={{ fontFamily: "'Fraunces', serif" }}>{k.value}</div>
+            {k.isGrade && k.value !== "—"
+              ? <GradeBadge grade={k.value} className="text-[26px] px-2.5 py-1 mt-0.5" />
+              : <div className="text-[26px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{k.value}</div>
+            }
           </div>
         ))}
       </div>
@@ -391,6 +403,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
               .filter(s => s.name === sub.name && getMonth(s) < getMonth(sub))
               .sort((a, b) => getMonth(b).localeCompare(getMonth(a)))[0];
             const delta = prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
+            const overallG = pctToGrade(subOverallPct(sub));
             return (
               <div key={sub.id} onClick={() => onOpen(sub.id)} className="bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 transition-colors cursor-pointer">
                 <div className="flex justify-between items-start">
@@ -418,10 +431,13 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                       {sub.team} · {fmtMonth(getMonth(sub))}
                     </div>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); onOpen(sub.id); }}
-                    className="text-xs border border-border rounded-sm px-2.5 py-1 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
-                    View →
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <GradeBadge grade={overallG} className="text-lg px-2 py-0.5" />
+                    <button onClick={e => { e.stopPropagation(); onOpen(sub.id); }}
+                      className="text-xs border border-border rounded-sm px-2.5 py-1 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
+                      View →
+                    </button>
+                  </div>
                 </div>
                 <div className="flex gap-1.5 flex-wrap mt-2">
                   {Object.keys(tools).map(t => {
@@ -876,7 +892,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isU
                 <span className={cn("pill-" + t, "text-xs font-semibold px-3 py-1 rounded-full")}>{TOOLS[t]}</span>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-muted-foreground">{sc.total}/{sc.max} · {sc.pct}%</span>
-                  <span className={cn("text-[28px] font-medium leading-none", gradeClass(g))} style={{ fontFamily: "'Fraunces', serif" }}>{g}</span>
+                  <GradeBadge grade={g} className="text-[28px] px-3 py-1" />
                 </div>
               </div>
               <div className="border-l-[3px] border-foreground pl-3 py-2 bg-[#fbfaf6] dark:bg-secondary/40 text-sm mb-3 rounded-r-sm">{gradeAction(g)}</div>
@@ -1034,12 +1050,12 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
                 </div>
                 <div className="w-24 hidden sm:block">
                   <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-foreground/70" style={{ width: `${p.avg}%` }} />
+                    <div className="h-full rounded-full bg-foreground/70 animate-bar-grow" style={{ width: `${p.avg}%` }} />
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-xs text-muted-foreground font-mono">{p.avg}%</span>
-                  <span className={cn("text-xl font-medium leading-none", gradeClass(g))} style={{ fontFamily: "'Fraunces', serif" }}>{g}</span>
+                  <GradeBadge grade={g} className="text-xl px-2 py-0.5" />
                 </div>
                 {p.months.size > 1 && (
                   <button onClick={() => onOpenPerson(p.name)}
