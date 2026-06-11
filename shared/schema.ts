@@ -36,11 +36,11 @@ export const toolScoreSchema = z.object({
 });
 
 export const submitBodySchema = z.object({
-  name: z.string().min(1),
-  team: z.string().min(1),
+  name: z.string().min(1).max(100),
+  team: z.string().min(1).max(60),
   tools: z.record(z.enum(["cgt", "cla", "per"]), toolScoreSchema),
-  useCases: z.string().optional(),
-  challenges: z.string().optional(),
+  useCases: z.string().max(2000).optional(),
+  challenges: z.string().max(2000).optional(),
 });
 
 export type SubmitBody = z.infer<typeof submitBodySchema>;

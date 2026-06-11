@@ -3,17 +3,36 @@ import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
 import session from "express-session";
 import MemoryStore from "memorystore";
-import cors from "cors";
+import helmet from "helmet";
+import crypto from "node:crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors({
-  origin: true,
-  credentials: true,
+// Render terminates TLS at its proxy — needed for secure cookies + correct client IPs
+app.set("trust proxy", 1);
+
+// Security headers. CSP only in production — Vite dev server needs inline/eval scripts for HMR.
+app.use(helmet({
+  contentSecurityPolicy: isProd ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  } : false,
 }));
 
 declare module "http" {
@@ -32,15 +51,29 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Never fall back to a secret that lives in a public repo. If SESSION_SECRET
+// isn't set, generate a random one per boot — sessions die on restart anyway
+// (MemoryStore), and forged cookies become impossible either way.
+const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+if (!process.env.SESSION_SECRET) {
+  log("WARNING: SESSION_SECRET not set — using a random per-boot secret. Set it in your env to keep admin sessions across restarts.", "security");
+}
+
 const MStore = MemoryStore(session);
 app.use(
   session({
     name: "vcny-sid",
-    secret: process.env.SESSION_SECRET || "vcny-helpdesk-secret-2026",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     store: new MStore({ checkPeriod: 86400000 }),
-    cookie: { maxAge: 86400000 * 7, sameSite: "lax", path: "/" }, // 7 days
+    cookie: {
+      maxAge: 86400000 * 7, // 7 days
+      sameSite: "lax",
+      path: "/",
+      httpOnly: true,
+      secure: isProd, // cookie only ever sent over HTTPS in production
+    },
   })
 );
 
@@ -86,7 +119,10 @@ app.use((req, res, next) => {
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    // Don't leak internal error details (DB messages, stack hints) to clients in production
+    const message = isProd && status >= 500
+      ? "Internal Server Error"
+      : err.message || "Internal Server Error";
 
     console.error("Internal Server Error:", err);
 

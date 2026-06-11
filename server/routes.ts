@@ -3,15 +3,52 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { submitBodySchema } from "@shared/schema";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
+import crypto from "node:crypto";
 
 let ADMIN_USER = process.env.ADMIN_USER || "elie";
-let ADMIN_PASS = process.env.ADMIN_PASS || "VCNYAI";
+let ADMIN_PASS = process.env.ADMIN_PASS || "";
+
+if (!ADMIN_PASS) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("ADMIN_PASS environment variable must be set in production. Set it in Render before deploying.");
+  }
+  ADMIN_PASS = "dev-only-password";
+  console.warn("[security] ADMIN_PASS not set — using dev-only default. Never deploy without it.");
+}
+
+// Constant-time string comparison — prevents timing attacks on credential checks
+function safeEqual(a: string, b: string): boolean {
+  const ha = crypto.createHash("sha256").update(a).digest();
+  const hb = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+// Brute-force protection: 10 login attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts. Try again in 15 minutes." },
+});
+
+// Spam protection on the public form: 50 submissions per 15 minutes per IP
+// (generous enough for the whole office behind one NAT IP)
+const submitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many submissions from this network. Try again shortly." },
+});
 
 export function registerRoutes(httpServer: Server, app: Express) {
   // ── Admin auth ──────────────────────────────────────────────────────────
-  app.post("/api/admin/login", (req, res) => {
+  app.post("/api/admin/login", loginLimiter, (req, res) => {
     const { username, password } = req.body ?? {};
-    if (username === ADMIN_USER && password === ADMIN_PASS) {
+    if (typeof username === "string" && typeof password === "string"
+        && safeEqual(username, ADMIN_USER) && safeEqual(password, ADMIN_PASS)) {
       (req.session as any).admin = true;
       res.json({ ok: true });
     } else {
@@ -25,7 +62,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
   app.post("/api/admin/change-password", requireAdmin, (req, res) => {
     const { currentPassword, newUsername, newPassword } = req.body ?? {};
-    if (currentPassword !== ADMIN_PASS) {
+    if (typeof currentPassword !== "string" || !safeEqual(currentPassword, ADMIN_PASS)) {
       return res.status(401).json({ error: "Current password is incorrect" });
     }
     if (!newPassword || newPassword.length < 4) {
@@ -55,7 +92,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // ── Submissions (public — employees submit) ─────────────────────────────
-  app.post("/api/submissions", async (req, res) => {
+  app.post("/api/submissions", submitLimiter, async (req, res) => {
     const result = submitBodySchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ error: result.error.flatten() });
@@ -85,9 +122,9 @@ export function registerRoutes(httpServer: Server, app: Express) {
   app.patch("/api/submissions/:id", requireAdmin, async (req, res) => {
     const { name, team, notes } = req.body ?? {};
     const data: { name?: string; team?: string; notes?: string } = {};
-    if (typeof name === "string" && name.trim()) data.name = name.trim();
-    if (typeof team === "string" && team.trim()) data.team = team.trim();
-    if (typeof notes === "string") data.notes = notes;
+    if (typeof name === "string" && name.trim()) data.name = name.trim().slice(0, 100);
+    if (typeof team === "string" && team.trim()) data.team = team.trim().slice(0, 60);
+    if (typeof notes === "string") data.notes = notes.slice(0, 5000);
     if (Object.keys(data).length === 0) return res.status(400).json({ error: "No valid fields to update" });
     const sub = await storage.updateSubmission(req.params.id, data);
     if (!sub) return res.status(404).json({ error: "Not found" });
