@@ -60,7 +60,7 @@ export, printable scorecards, and a settings page.
 ALTER TABLE submissions ADD COLUMN IF NOT EXISTS notes text DEFAULT '';
 CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL, team text NOT NULL DEFAULT '');
 -- + INSERT of the 23 employee names (team assignments still pending)
--- + merged Lisa Brier's three per-tool submissions into one
+-- + merged one employee's three per-tool submissions into a single submission
 ```
 
 ### Afternoon–evening: UI/UX overhaul (3 rounds)
