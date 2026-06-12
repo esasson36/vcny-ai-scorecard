@@ -172,6 +172,13 @@ export const storage: IStorage = {
       .select("name, team")
       .order("name");
     if (error) throw error;
-    return (data as { name: string; team: string }[]) ?? [];
+    // Defensive dedupe by name — the table should be unique, but never show doubles
+    const seen = new Set<string>();
+    return ((data as { name: string; team: string }[]) ?? []).filter(e => {
+      const key = e.name.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   },
 };
