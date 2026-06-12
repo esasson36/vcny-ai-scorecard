@@ -131,6 +131,25 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   rotated — it was burned in git history) and a strong random `SESSION_SECRET`.
 
 - **`3947d44` (08:58)** — Added this changelog.
+- **`b3a03b9`** — Rewrote the changelog chronologically with the full project
+  history and dates.
+
+## 2026-06-12 — Repo made public, duplicate-employees fix
+
+- **Pre-publication security sweep** — audited the entire git history before
+  flipping the repo to public: no Supabase keys, JWTs, `.env` files, or database
+  files ever committed; only the already-rotated admin password / session secret
+  exist in old commits (dead credentials). Removed an employee's name from the
+  changelog (`6d60036`).
+- **Repository made public** on GitHub.
+- **`0589ece`** — Fixed the "Not yet submitted" list showing each person multiple
+  times. Root cause: the employees INSERT script had been run several times and the
+  table had no unique constraint, so every run added all 23 names again. Fix was
+  two-part:
+  - Supabase SQL: deleted duplicate rows and added a `UNIQUE (name)` constraint so
+    re-running an insert errors instead of silently duplicating
+  - Server: `getEmployees()` now de-duplicates by name as a safety net, so doubles
+    can never render regardless of table state
 
 ### Required environment variables (Render → Environment)
 
