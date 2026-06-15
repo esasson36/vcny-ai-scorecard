@@ -180,6 +180,187 @@ export default function AdminPanel({ onLogout }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  function exportReport() {
+    const esc = (s: string) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    const TOOLS_MAP: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
+    const monthLabel = selectedMonth === "all" ? "All Time" : fmtMonth(selectedMonth);
+    const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    const gradeColors: Record<string, string> = { A: "#16a34a", B: "#65a30d", C: "#d97706", D: "#ea580c", F: "#dc2626" };
+    const gradeBg: Record<string, string> = { A: "#f0fdf4", B: "#f7fee7", C: "#fffbeb", D: "#fff7ed", F: "#fef2f2" };
+    const gradeOrder = ["A","B","C","D","F"];
+
+    const personData = filteredSubs.map(sub => {
+      const tools = parseTools(sub.tools);
+      const toolRows = Object.keys(tools).map(t => {
+        const ts = tools[t];
+        const sc = calcScore(ts);
+        return { key: t, name: TOOLS_MAP[t] ?? t, sc, grade: pctToGrade(sc.pct) };
+      });
+      const avgPct = toolRows.length ? Math.round(toolRows.reduce((s, r) => s + r.sc.pct, 0) / toolRows.length) : 0;
+      return { sub, toolRows, avgPct, overallGrade: pctToGrade(avgPct) };
+    });
+
+    const gradeCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+    personData.forEach(r => { gradeCounts[r.overallGrade] = (gradeCounts[r.overallGrade] || 0) + 1; });
+
+    const allPcts = personData.map(r => r.avgPct);
+    const overallPct = allPcts.length ? Math.round(allPcts.reduce((a, b) => a + b, 0) / allPcts.length) : 0;
+    const overallGrade = pctToGrade(overallPct);
+
+    const byTeam = new Map<string, typeof personData>();
+    personData.forEach(r => {
+      const t = r.sub.team || "Other";
+      if (!byTeam.has(t)) byTeam.set(t, []);
+      byTeam.get(t)!.push(r);
+    });
+
+    const submittedFirstNames = new Set(filteredSubs.map(s => s.name.toLowerCase().trim().split(/\s+/)[0]));
+    const nameSubmitted = (empName: string) => {
+      const lower = empName.toLowerCase().trim();
+      if (filteredSubs.some(s => s.name.toLowerCase().trim() === lower)) return true;
+      const empFirst = lower.split(/\s+/)[0];
+      return empFirst.length > 2 && submittedFirstNames.has(empFirst);
+    };
+    const missing = employees.filter(e => !nameSubmitted(e.name));
+
+    const rosterSorted = [...personData].sort((a, b) => {
+      const gi = gradeOrder.indexOf(a.overallGrade) - gradeOrder.indexOf(b.overallGrade);
+      return gi !== 0 ? gi : a.sub.name.localeCompare(b.sub.name);
+    });
+
+    const badge = (g: string, sz = 14) =>
+      `<span style="display:inline-block;font-family:Georgia,serif;font-size:${sz}px;font-weight:600;padding:1px 7px;border-radius:4px;background:${gradeBg[g]};color:${gradeColors[g]};line-height:1.5">${g}</span>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VCNY AI Scorecard — Audit Report · ${esc(monthLabel)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.6;color:#111;max-width:900px;margin:0 auto;padding:48px 40px;background:#fff}
+  .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#888;margin-bottom:6px}
+  h1{font-family:Georgia,serif;font-size:32px;font-weight:400;margin-bottom:4px}
+  .meta{font-size:12px;color:#666;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #111}
+  h2{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:#aaa;margin:32px 0 12px}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
+  .kpi{background:#f8f8f8;border:1px solid #e5e5e5;padding:14px 16px;border-radius:4px}
+  .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:4px}
+  .kpi-value{font-size:26px;font-weight:700;line-height:1}
+  .kpi-sub{font-size:11px;color:#999;margin-top:2px}
+  .dist{display:flex;gap:8px;margin-bottom:8px}
+  .dist-item{flex:1;text-align:center;padding:12px 8px;border-radius:4px}
+  .dist-count{font-size:26px;font-weight:700;line-height:1;margin-bottom:2px}
+  .dist-label{font-size:12px}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px}
+  th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;padding:0 8px 8px;border-bottom:1px solid #e5e5e5;white-space:nowrap}
+  td{padding:9px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .team-block{margin-bottom:20px}
+  .team-header{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#555;padding-bottom:5px;border-bottom:1px solid #eee;margin-bottom:2px}
+  .qual-block{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0f0f0}
+  .qual-block:last-child{border-bottom:none}
+  .qual-name{font-weight:600;margin-bottom:6px}
+  .qual-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;margin-bottom:3px}
+  .qual-text{color:#444;font-style:italic;padding-left:12px;border-left:2px solid #e5e5e5;margin-bottom:10px}
+  .missing{display:flex;flex-wrap:wrap;gap:6px 20px}
+  .footer{margin-top:48px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:10px;color:#aaa;text-align:center}
+  @media print{body{padding:24px}h2{margin-top:20px}}
+</style>
+</head>
+<body>
+<p class="eyebrow">VCNY · AI Scorecard</p>
+<h1>Audit Report</h1>
+<p class="meta">Period: ${esc(monthLabel)} &nbsp;·&nbsp; ${filteredSubs.length} submission${filteredSubs.length !== 1 ? "s" : ""} &nbsp;·&nbsp; Generated ${esc(dateStr)}</p>
+
+<h2>Overview</h2>
+<div class="kpi-grid">
+  <div class="kpi">
+    <div class="kpi-label">Submissions</div>
+    <div class="kpi-value">${filteredSubs.length}</div>
+    ${employees.length > 0 ? `<div class="kpi-sub">${employees.length - missing.length} of ${employees.length} employees</div>` : ""}
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Response Rate</div>
+    <div class="kpi-value">${employees.length > 0 ? Math.round(((employees.length - missing.length) / employees.length) * 100) + "%" : "—"}</div>
+    ${employees.length > 0 ? `<div class="kpi-sub">${missing.length} outstanding</div>` : ""}
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Avg Grade</div>
+    <div class="kpi-value" style="color:${gradeColors[overallGrade] || "#111"}">${overallGrade}</div>
+    <div class="kpi-sub">${overallPct}%</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Teams</div>
+    <div class="kpi-value">${byTeam.size}</div>
+    <div class="kpi-sub">represented</div>
+  </div>
+</div>
+
+<h2>Grade Distribution</h2>
+<div class="dist">
+  ${["A","B","C","D","F"].map(g => `
+  <div class="dist-item" style="background:${gradeBg[g]}">
+    <div class="dist-count" style="color:${gradeColors[g]}">${gradeCounts[g] || 0}</div>
+    <div class="dist-label" style="color:${gradeColors[g]}">${g}</div>
+  </div>`).join("")}
+</div>
+
+<h2>Full Roster &nbsp;·&nbsp; ${esc(monthLabel)}</h2>
+<table>
+  <thead><tr><th>Name</th><th>Team</th><th>Tools</th><th>Grade</th><th>Recommendation</th></tr></thead>
+  <tbody>
+    ${rosterSorted.map(r => `
+    <tr>
+      <td style="font-weight:600">${esc(r.sub.name)}</td>
+      <td style="color:#666;font-size:12px">${esc(r.sub.team)}</td>
+      <td style="font-size:11px;color:#555">${r.toolRows.map(t => `${esc(t.name)}&nbsp;${badge(t.grade,11)}`).join(" &nbsp;·&nbsp; ")}</td>
+      <td>${badge(r.overallGrade)}&nbsp;<span style="font-size:11px;color:#999">${r.avgPct}%</span></td>
+      <td style="font-size:11px;color:#555">${esc(gradeAction(r.overallGrade))}</td>
+    </tr>`).join("")}
+  </tbody>
+</table>
+
+<h2>By Team</h2>
+${Array.from(byTeam.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([team, members]) => {
+  const tPct = Math.round(members.reduce((s,r) => s + r.avgPct, 0) / members.length);
+  const tGrade = pctToGrade(tPct);
+  return `<div class="team-block">
+  <div class="team-header">${esc(team)} &nbsp;${badge(tGrade,12)}&nbsp; <span style="font-weight:400;color:#999;font-size:11px">${members.length} submitted · ${tPct}% avg</span></div>
+  <table><tbody>
+    ${members.sort((a,b) => gradeOrder.indexOf(a.overallGrade)-gradeOrder.indexOf(b.overallGrade)||a.sub.name.localeCompare(b.sub.name)).map(r=>`
+    <tr>
+      <td style="width:180px;font-size:12px">${esc(r.sub.name)}</td>
+      <td style="font-size:11px;color:#666">${r.toolRows.map(t=>esc(t.name)).join(", ")}</td>
+      <td style="width:90px">${badge(r.overallGrade,12)}&nbsp;<span style="font-size:11px;color:#999">${r.avgPct}%</span></td>
+    </tr>`).join("")}
+  </tbody></table>
+</div>`;}).join("")}
+
+${filteredSubs.some(s => s.useCases || s.challenges) ? `
+<h2>Qualitative Feedback</h2>
+${filteredSubs.filter(s=>s.useCases||s.challenges).map(sub=>`
+<div class="qual-block">
+  <div class="qual-name">${esc(sub.name)} <span style="font-weight:400;color:#888">· ${esc(sub.team)}</span></div>
+  ${sub.useCases ? `<div class="qual-label">Use cases</div><div class="qual-text">${esc(sub.useCases)}</div>` : ""}
+  ${sub.challenges ? `<div class="qual-label">Challenges</div><div class="qual-text">${esc(sub.challenges)}</div>` : ""}
+</div>`).join("")}` : ""}
+
+<h2>Not Yet Submitted${employees.length > 0 ? ` &nbsp;·&nbsp; ${missing.length} of ${employees.length}` : ""}</h2>
+${missing.length > 0
+  ? `<div class="missing">${missing.map(e=>`<span style="font-size:12px;color:#dc2626">${esc(e.name)}${e.team?` <span style="color:#aaa">(${esc(e.team)})</span>`:""}</span>`).join("")}</div>`
+  : `<p style="color:#16a34a;font-size:12px">✓ Everyone has submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
+
+<div class="footer">VCNY AI Scorecard &nbsp;·&nbsp; ${esc(monthLabel)} &nbsp;·&nbsp; Generated ${esc(dateStr)}</div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   const viewTitle: Record<View, string> = {
     dashboard: "Admin dashboard",
     detail: activeSub?.name ?? "Submission",
@@ -208,6 +389,12 @@ export default function AdminPanel({ onLogout }: Props) {
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"
               style={{ fontFamily: "'Geist Mono', monospace" }}>
               <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />Refresh
+            </button>
+            <button onClick={exportReport} disabled={filteredSubs.length === 0}
+              className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
+              style={{ fontFamily: "'Geist Mono', monospace" }}
+              title={`Open audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
+              ↗ Report · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
             </button>
             <button onClick={exportCSV} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
