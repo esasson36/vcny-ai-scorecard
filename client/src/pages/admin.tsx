@@ -232,10 +232,11 @@ export default function AdminPanel({ onLogout }: Props) {
       `<span style="display:inline-block;font-family:Georgia,serif;font-size:${sz}px;font-weight:600;padding:1px 7px;border-radius:4px;background:${gradeBg[g]};color:${gradeColors[g]};line-height:1.5">${g}</span>`;
 
     const html = `<!DOCTYPE html>
-<html lang="en">
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40" lang="en">
 <head>
 <meta charset="UTF-8">
 <title>VCNY AI Scorecard — Audit Report · ${esc(monthLabel)}</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.6;color:#111;max-width:900px;margin:0 auto;padding:48px 40px;background:#fff}
@@ -355,10 +356,14 @@ ${missing.length > 0
 </body>
 </html>`;
 
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const a = document.createElement("a");
+    a.href = url;
+    const suffix = selectedMonth === "all" ? "all" : selectedMonth;
+    a.download = `vcny-ai-report-${suffix}.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const viewTitle: Record<View, string> = {
@@ -393,8 +398,8 @@ ${missing.length > 0
             <button onClick={exportReport} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
               style={{ fontFamily: "'Geist Mono', monospace" }}
-              title={`Open audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
-              ↗ Report · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
+              title={`Download audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)} as Word doc`}>
+              ↓ Word · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
             </button>
             <button onClick={exportCSV} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
