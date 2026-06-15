@@ -466,8 +466,17 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
 
       {/* Not yet submitted */}
       {employees.length > 0 && (() => {
-        const submittedNames = new Set(subs.map(s => s.name.toLowerCase().trim()));
-        const missing = employees.filter(e => !submittedNames.has(e.name.toLowerCase().trim()));
+        // Exact match OR first-name match (handles "Caitlin" vs "Caitlin Smith")
+        const submittedFirstNames = new Set(
+          subs.map(s => s.name.toLowerCase().trim().split(/\s+/)[0])
+        );
+        const nameSubmitted = (empName: string) => {
+          const lower = empName.toLowerCase().trim();
+          if (subs.some(s => s.name.toLowerCase().trim() === lower)) return true;
+          const empFirst = lower.split(/\s+/)[0];
+          return empFirst.length > 2 && submittedFirstNames.has(empFirst);
+        };
+        const missing = employees.filter(e => !nameSubmitted(e.name));
         if (missing.length === 0) return (
           <div className="mt-4 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/40 rounded-sm px-4 py-3">
             <span>✓</span>
