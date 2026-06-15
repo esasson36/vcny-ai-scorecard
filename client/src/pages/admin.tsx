@@ -228,131 +228,126 @@ export default function AdminPanel({ onLogout }: Props) {
       return gi !== 0 ? gi : a.sub.name.localeCompare(b.sub.name);
     });
 
-    const badge = (g: string, sz = 14) =>
-      `<span style="display:inline-block;font-family:Georgia,serif;font-size:${sz}px;font-weight:600;padding:1px 7px;border-radius:4px;background:${gradeBg[g]};color:${gradeColors[g]};line-height:1.5">${g}</span>`;
+    // Word-safe badge: bold colored text (no inline-block, no border-radius)
+    const badge = (g: string, pt = 11) =>
+      `<b style="color:${gradeColors[g] || "#111"};font-size:${pt}pt">${g}</b>`;
+
+    const sectionHead = (label: string) =>
+      `<p style="font-family:Arial,sans-serif;font-size:8pt;color:#999999;border-bottom:1pt solid #cccccc;padding-bottom:3pt;margin:20pt 0 8pt">${label.toUpperCase()}</p>`;
 
     const html = `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40" lang="en">
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta charset="UTF-8">
-<title>VCNY AI Scorecard — Audit Report · ${esc(monthLabel)}</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<title>VCNY AI Scorecard — Audit Report</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.6;color:#111;max-width:900px;margin:0 auto;padding:48px 40px;background:#fff}
-  .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#888;margin-bottom:6px}
-  h1{font-family:Georgia,serif;font-size:32px;font-weight:400;margin-bottom:4px}
-  .meta{font-size:12px;color:#666;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #111}
-  h2{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:#aaa;margin:32px 0 12px}
-  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
-  .kpi{background:#f8f8f8;border:1px solid #e5e5e5;padding:14px 16px;border-radius:4px}
-  .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:4px}
-  .kpi-value{font-size:26px;font-weight:700;line-height:1}
-  .kpi-sub{font-size:11px;color:#999;margin-top:2px}
-  .dist{display:flex;gap:8px;margin-bottom:8px}
-  .dist-item{flex:1;text-align:center;padding:12px 8px;border-radius:4px}
-  .dist-count{font-size:26px;font-weight:700;line-height:1;margin-bottom:2px}
-  .dist-label{font-size:12px}
-  table{width:100%;border-collapse:collapse;margin-bottom:8px}
-  th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;padding:0 8px 8px;border-bottom:1px solid #e5e5e5;white-space:nowrap}
-  td{padding:9px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
-  tr:last-child td{border-bottom:none}
-  .team-block{margin-bottom:20px}
-  .team-header{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#555;padding-bottom:5px;border-bottom:1px solid #eee;margin-bottom:2px}
-  .qual-block{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0f0f0}
-  .qual-block:last-child{border-bottom:none}
-  .qual-name{font-weight:600;margin-bottom:6px}
-  .qual-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#aaa;margin-bottom:3px}
-  .qual-text{color:#444;font-style:italic;padding-left:12px;border-left:2px solid #e5e5e5;margin-bottom:10px}
-  .missing{display:flex;flex-wrap:wrap;gap:6px 20px}
-  .footer{margin-top:48px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:10px;color:#aaa;text-align:center}
-  @media print{body{padding:24px}h2{margin-top:20px}}
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #111111; margin: 0; line-height: 1.4; }
+  p { margin: 0 0 4pt; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { font-family: Arial, sans-serif; font-size: 10pt; vertical-align: top; padding: 5pt 7pt; }
+  th { font-size: 8pt; color: #999999; border-bottom: 1pt solid #cccccc; text-align: left; }
+  td { border-bottom: 1pt solid #eeeeee; }
 </style>
 </head>
-<body>
-<p class="eyebrow">VCNY · AI Scorecard</p>
-<h1>Audit Report</h1>
-<p class="meta">Period: ${esc(monthLabel)} &nbsp;·&nbsp; ${filteredSubs.length} submission${filteredSubs.length !== 1 ? "s" : ""} &nbsp;·&nbsp; Generated ${esc(dateStr)}</p>
+<body style="margin:1in 1in 1in 1in">
 
-<h2>Overview</h2>
-<div class="kpi-grid">
-  <div class="kpi">
-    <div class="kpi-label">Submissions</div>
-    <div class="kpi-value">${filteredSubs.length}</div>
-    ${employees.length > 0 ? `<div class="kpi-sub">${employees.length - missing.length} of ${employees.length} employees</div>` : ""}
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Response Rate</div>
-    <div class="kpi-value">${employees.length > 0 ? Math.round(((employees.length - missing.length) / employees.length) * 100) + "%" : "—"}</div>
-    ${employees.length > 0 ? `<div class="kpi-sub">${missing.length} outstanding</div>` : ""}
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Avg Grade</div>
-    <div class="kpi-value" style="color:${gradeColors[overallGrade] || "#111"}">${overallGrade}</div>
-    <div class="kpi-sub">${overallPct}%</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Teams</div>
-    <div class="kpi-value">${byTeam.size}</div>
-    <div class="kpi-sub">represented</div>
-  </div>
-</div>
+<p style="font-size:8pt;color:#888888;font-family:Arial,sans-serif;margin-bottom:4pt">VCNY &middot; AI SCORECARD</p>
+<p style="font-family:Georgia,serif;font-size:26pt;font-weight:normal;color:#111111;margin-bottom:3pt">Audit Report</p>
+<p style="font-size:10pt;color:#666666;border-bottom:2pt solid #111111;padding-bottom:12pt;margin-bottom:0">Period: ${esc(monthLabel)} &nbsp;&middot;&nbsp; ${filteredSubs.length} submission${filteredSubs.length !== 1 ? "s" : ""} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
 
-<h2>Grade Distribution</h2>
-<div class="dist">
-  ${["A","B","C","D","F"].map(g => `
-  <div class="dist-item" style="background:${gradeBg[g]}">
-    <div class="dist-count" style="color:${gradeColors[g]}">${gradeCounts[g] || 0}</div>
-    <div class="dist-label" style="color:${gradeColors[g]}">${g}</div>
-  </div>`).join("")}
-</div>
+${sectionHead("Overview")}
+<table style="margin-bottom:14pt">
+  <tr>
+    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
+      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">SUBMISSIONS</p>
+      <p style="font-size:22pt;font-weight:bold;color:#111111;line-height:1;margin-bottom:2pt">${filteredSubs.length}</p>
+      ${employees.length > 0 ? `<p style="font-size:8pt;color:#999999">${employees.length - missing.length} of ${employees.length} employees</p>` : "<p></p>"}
+    </td>
+    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
+      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">RESPONSE RATE</p>
+      <p style="font-size:22pt;font-weight:bold;color:#111111;line-height:1;margin-bottom:2pt">${employees.length > 0 ? Math.round(((employees.length - missing.length) / employees.length) * 100) + "%" : "&mdash;"}</p>
+      ${employees.length > 0 ? `<p style="font-size:8pt;color:#999999">${missing.length} outstanding</p>` : "<p></p>"}
+    </td>
+    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
+      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">AVG GRADE</p>
+      <p style="font-size:22pt;font-weight:bold;color:${gradeColors[overallGrade] || "#111111"};line-height:1;margin-bottom:2pt">${overallGrade}</p>
+      <p style="font-size:8pt;color:#999999">${overallPct}%</p>
+    </td>
+    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
+      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">TEAMS</p>
+      <p style="font-size:22pt;font-weight:bold;color:#111111;line-height:1;margin-bottom:2pt">${byTeam.size}</p>
+      <p style="font-size:8pt;color:#999999">represented</p>
+    </td>
+  </tr>
+</table>
 
-<h2>Full Roster &nbsp;·&nbsp; ${esc(monthLabel)}</h2>
-<table>
-  <thead><tr><th>Name</th><th>Team</th><th>Tools</th><th>Grade</th><th>Recommendation</th></tr></thead>
+${sectionHead("Grade Distribution")}
+<table style="margin-bottom:14pt">
+  <tr>
+    ${["A","B","C","D","F"].map(g => `
+    <td style="background:${gradeBg[g]};border:1pt solid #e0e0e0;padding:10pt;text-align:center;width:20%">
+      <p style="font-size:22pt;font-weight:bold;color:${gradeColors[g]};line-height:1;margin-bottom:2pt">${gradeCounts[g] || 0}</p>
+      <p style="font-size:13pt;color:${gradeColors[g]};font-weight:bold">${g}</p>
+    </td>`).join("")}
+  </tr>
+</table>
+
+${sectionHead("Full Roster &middot; " + esc(monthLabel))}
+<table style="margin-bottom:14pt">
+  <thead>
+    <tr>
+      <th style="width:18%">Name</th>
+      <th style="width:14%">Team</th>
+      <th style="width:28%">Tools</th>
+      <th style="width:10%">Grade</th>
+      <th>Recommendation</th>
+    </tr>
+  </thead>
   <tbody>
     ${rosterSorted.map(r => `
     <tr>
-      <td style="font-weight:600">${esc(r.sub.name)}</td>
-      <td style="color:#666;font-size:12px">${esc(r.sub.team)}</td>
-      <td style="font-size:11px;color:#555">${r.toolRows.map(t => `${esc(t.name)}&nbsp;${badge(t.grade,11)}`).join(" &nbsp;·&nbsp; ")}</td>
-      <td>${badge(r.overallGrade)}&nbsp;<span style="font-size:11px;color:#999">${r.avgPct}%</span></td>
-      <td style="font-size:11px;color:#555">${esc(gradeAction(r.overallGrade))}</td>
+      <td style="font-weight:bold">${esc(r.sub.name)}</td>
+      <td style="color:#666666">${esc(r.sub.team)}</td>
+      <td style="font-size:9pt;color:#555555">${r.toolRows.map(t => `${esc(t.name)} ${badge(t.grade, 9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
+      <td>${badge(r.overallGrade, 12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
+      <td style="font-size:9pt;color:#555555">${esc(gradeAction(r.overallGrade))}</td>
     </tr>`).join("")}
   </tbody>
 </table>
 
-<h2>By Team</h2>
+${sectionHead("By Team")}
 ${Array.from(byTeam.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([team, members]) => {
   const tPct = Math.round(members.reduce((s,r) => s + r.avgPct, 0) / members.length);
   const tGrade = pctToGrade(tPct);
-  return `<div class="team-block">
-  <div class="team-header">${esc(team)} &nbsp;${badge(tGrade,12)}&nbsp; <span style="font-weight:400;color:#999;font-size:11px">${members.length} submitted · ${tPct}% avg</span></div>
-  <table><tbody>
-    ${members.sort((a,b) => gradeOrder.indexOf(a.overallGrade)-gradeOrder.indexOf(b.overallGrade)||a.sub.name.localeCompare(b.sub.name)).map(r=>`
-    <tr>
-      <td style="width:180px;font-size:12px">${esc(r.sub.name)}</td>
-      <td style="font-size:11px;color:#666">${r.toolRows.map(t=>esc(t.name)).join(", ")}</td>
-      <td style="width:90px">${badge(r.overallGrade,12)}&nbsp;<span style="font-size:11px;color:#999">${r.avgPct}%</span></td>
-    </tr>`).join("")}
-  </tbody></table>
-</div>`;}).join("")}
+  return `<p style="font-size:10pt;font-weight:bold;color:#333333;border-bottom:1pt solid #dddddd;padding-bottom:3pt;margin-bottom:2pt;margin-top:10pt">
+    ${esc(team)} &nbsp; ${badge(tGrade, 10)} &nbsp; <span style="font-weight:normal;color:#999999;font-size:9pt">${members.length} submitted &middot; ${tPct}% avg</span>
+  </p>
+  <table style="margin-bottom:6pt">
+    <tbody>
+      ${members.sort((a,b) => gradeOrder.indexOf(a.overallGrade)-gradeOrder.indexOf(b.overallGrade)||a.sub.name.localeCompare(b.sub.name)).map(r=>`
+      <tr>
+        <td style="width:40%;font-size:10pt">${esc(r.sub.name)}</td>
+        <td style="font-size:9pt;color:#666666">${r.toolRows.map(t=>esc(t.name)).join(", ")}</td>
+        <td style="width:15%">${badge(r.overallGrade, 10)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;}).join("")}
 
 ${filteredSubs.some(s => s.useCases || s.challenges) ? `
-<h2>Qualitative Feedback</h2>
+${sectionHead("Qualitative Feedback")}
 ${filteredSubs.filter(s=>s.useCases||s.challenges).map(sub=>`
-<div class="qual-block">
-  <div class="qual-name">${esc(sub.name)} <span style="font-weight:400;color:#888">· ${esc(sub.team)}</span></div>
-  ${sub.useCases ? `<div class="qual-label">Use cases</div><div class="qual-text">${esc(sub.useCases)}</div>` : ""}
-  ${sub.challenges ? `<div class="qual-label">Challenges</div><div class="qual-text">${esc(sub.challenges)}</div>` : ""}
-</div>`).join("")}` : ""}
+<p style="font-weight:bold;font-size:10pt;margin-top:10pt;margin-bottom:2pt">${esc(sub.name)} <span style="font-weight:normal;color:#888888">&middot; ${esc(sub.team)}</span></p>
+${sub.useCases ? `<p style="font-size:8pt;color:#aaaaaa;margin-bottom:2pt">USE CASES</p><p style="font-style:italic;color:#444444;font-size:10pt;margin-bottom:4pt;padding-left:12pt;border-left:2pt solid #dddddd">${esc(sub.useCases)}</p>` : ""}
+${sub.challenges ? `<p style="font-size:8pt;color:#aaaaaa;margin-bottom:2pt">CHALLENGES</p><p style="font-style:italic;color:#444444;font-size:10pt;margin-bottom:4pt;padding-left:12pt;border-left:2pt solid #dddddd">${esc(sub.challenges)}</p>` : ""}
+`).join("")}` : ""}
 
-<h2>Not Yet Submitted${employees.length > 0 ? ` &nbsp;·&nbsp; ${missing.length} of ${employees.length}` : ""}</h2>
+${sectionHead("Not Yet Submitted" + (employees.length > 0 ? " &middot; " + missing.length + " of " + employees.length : ""))}
 ${missing.length > 0
-  ? `<div class="missing">${missing.map(e=>`<span style="font-size:12px;color:#dc2626">${esc(e.name)}${e.team?` <span style="color:#aaa">(${esc(e.team)})</span>`:""}</span>`).join("")}</div>`
-  : `<p style="color:#16a34a;font-size:12px">✓ Everyone has submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
+  ? `<p style="font-size:10pt">${missing.map(e=>`<span style="color:#cc2222">${esc(e.name)}</span>${e.team ? ` <span style="color:#aaaaaa">(${esc(e.team)})</span>` : ""}`).join(" &nbsp;&middot;&nbsp; ")}</p>`
+  : `<p style="color:#16a34a;font-size:10pt">All employees have submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
 
-<div class="footer">VCNY AI Scorecard &nbsp;·&nbsp; ${esc(monthLabel)} &nbsp;·&nbsp; Generated ${esc(dateStr)}</div>
+<p style="margin-top:36pt;padding-top:8pt;border-top:1pt solid #dddddd;font-size:8pt;color:#aaaaaa;text-align:center">VCNY AI Scorecard &nbsp;&middot;&nbsp; ${esc(monthLabel)} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
 </body>
 </html>`;
 
@@ -398,8 +393,8 @@ ${missing.length > 0
             <button onClick={exportReport} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
               style={{ fontFamily: "'Geist Mono', monospace" }}
-              title={`Download audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)} as Word doc`}>
-              ↓ Word · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
+              title={`Download audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
+              ↓ Report · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
             </button>
             <button onClick={exportCSV} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
