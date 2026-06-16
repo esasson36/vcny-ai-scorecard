@@ -79,7 +79,7 @@ export default function SubmitPage() {
     const avgPct = Math.round(
       activeTools.map(t => calcScore(scores[t]).pct).reduce((a, b) => a + b, 0) / activeTools.length
     );
-    setTips(avgPct < 64 ? getToolTips(activeTools, 3) : []);
+    setTips(avgPct < 64 ? getToolTips(activeTools, effectiveTeam, 3) : []);
 
     mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges });
   }
