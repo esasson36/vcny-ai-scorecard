@@ -151,6 +151,38 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   - Server: `getEmployees()` now de-duplicates by name as a safety net, so doubles
     can never render regardless of table state
 
+## 2026-06-16 — Submission matching fix, audit report, coaching tips
+
+- **`b304d5a`** — Fixed the "Not yet submitted" list missing people who submitted
+  with only their first name (e.g. "Caitlin" not matching "Caitlin Smith"). Added
+  a first-name fallback: if the first word of the employee name matches the first
+  word of any submission name (and is longer than 2 characters to avoid false
+  positives), they count as submitted.
+
+- **`3062735` → `a904a70`** — **Audit Report button** added to the admin header
+  next to "↓ CSV". Clicking "↓ Report" downloads a Word-compatible `.doc` file
+  containing:
+  - Overview KPIs (submissions, response rate, avg grade, teams)
+  - Grade distribution (A/B/C/D/F counts)
+  - Full roster table sorted A → F with per-tool grades and recommendations
+  - Per-team breakdowns with member lists
+  - Qualitative feedback (use cases and challenges) for anyone who filled them in
+  - Not-yet-submitted list
+  
+  The file opens in Word and prints cleanly. HTML tables are used throughout
+  (not CSS grid/flex) for Word compatibility.
+
+- **`9deee76` → `baefc34`** — **Coaching tips on the success screen** for lower
+  scorers. After submitting, the app silently calculates the average score. If it
+  falls below a B (64%), a tip card appears on the "All done!" screen with 3
+  randomly selected, actionable tips. Tips are:
+  - **Tool-specific** — only tips for tools the person actually rated
+  - **Team-specific** — each of the 7 teams has its own tip bank per tool
+  - **126 tips total** (6 per tool × team combination, 3 shown at random)
+  - Tips for unknown/custom teams fall back to the generic "Other" bucket
+  - No score or grade is shown — tips are framed as "ways to get even more from AI"
+  - A/B scorers see the standard success screen with no tip card
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |
