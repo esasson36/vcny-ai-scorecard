@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { TOOLS, TOOL_KEYS, TEAMS, LABELS, type ToolKey, type MetricKey } from "@/lib/scorecard";
+import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, getCoachSuggestions, type ToolKey, type MetricKey } from "@/lib/scorecard";
 import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,7 @@ export default function SubmitPage() {
   const [challenges, setChallenges] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [tips, setTips] = useState<string[]>([]);
   const [dupWarning, setDupWarning] = useState("");
   const [dupChecked, setDupChecked] = useState(""); // "name|team" last checked
 
@@ -73,20 +74,44 @@ export default function SubmitPage() {
     if (activeTools.length === 0) { setError("Please select at least one tool you use."); return; }
     const tools: Record<string, ToolScores> = {};
     activeTools.forEach(t => { tools[t] = scores[t]; });
+
+    // Silently determine if tips are warranted (B+ = encouragement only, below B = show tips)
+    const avgPct = Math.round(
+      activeTools.map(t => calcScore(scores[t]).pct).reduce((a, b) => a + b, 0) / activeTools.length
+    );
+    setTips(avgPct < 64 ? getCoachSuggestions(effectiveTeam).slice(0, 3) : []);
+
     mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges });
   }
 
   if (submitted) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="max-w-sm w-full text-center space-y-5 animate-fade-up">
+        <div className={cn("w-full text-center space-y-5 animate-fade-up", tips.length > 0 ? "max-w-md" : "max-w-sm")}>
           <CheckCircle2 className="w-14 h-14 mx-auto animate-pop-in" style={{ color: "var(--good)" }} />
           <div>
             <h2 className="text-xl font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>All done!</h2>
             <p className="text-sm text-muted-foreground mt-2">Your scorecard has been sent to Elie for review. Thanks!</p>
           </div>
+
+          {tips.length > 0 && (
+            <div className="text-left bg-card border border-border rounded-sm px-5 py-4 space-y-3 animate-fade-up" style={{ animationDelay: "120ms" }}>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                A few ways to get even more from AI
+              </p>
+              <ul className="space-y-2">
+                {tips.map((tip, i) => (
+                  <li key={i} className="flex gap-2.5 text-sm text-foreground/80">
+                    <span className="mt-0.5 shrink-0 text-muted-foreground">→</span>
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <button
-            onClick={() => { setSubmitted(false); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); }}
+            onClick={() => { setSubmitted(false); setTips([]); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); }}
             className="text-sm border border-input rounded-sm px-5 py-2 hover:border-foreground hover:bg-foreground hover:text-background transition-all"
           >
             Submit another
