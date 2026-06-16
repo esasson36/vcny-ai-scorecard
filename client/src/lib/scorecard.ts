@@ -108,3 +108,60 @@ export const COACH_SUGGESTIONS: Record<string, string[]> = {
 export function getCoachSuggestions(team: string): string[] {
   return COACH_SUGGESTIONS[team] ?? COACH_SUGGESTIONS.Other;
 }
+
+// Tips keyed by tool — shown on the success screen for lower scorers
+export const TOOL_TIPS: Record<string, string[]> = {
+  cgt: [
+    "Draft emails with it first, then edit to your own voice — cuts writing time in half",
+    "Use 'give me 5 options' when you're stuck instead of staring at a blank page",
+    "Paste any long document and say 'summarize this in 3 bullets'",
+    "Try 'act as a [Marketing expert / Sales coach] and help me with [task]' for better results",
+    "Ask it to review and improve anything before you send it",
+    "Build reusable templates: 'write a template for [recurring task] I can copy each time'",
+    "Brainstorm faster: 'give me 10 ideas for [topic]' then filter down to the best ones",
+    "Ask 'what am I missing?' after any plan or proposal — it catches gaps",
+    "Stuck on a subject line or headline? Ask for 5 versions under 10 words",
+    "Paste an email thread and say 'draft a reply that moves this toward a decision'",
+    "Use it to prep talking points: 'help me explain [topic] to someone unfamiliar with it'",
+    "Ask it to write a job post, meeting agenda, or onboarding checklist from a short description",
+  ],
+  cla: [
+    "Paste long reports or contracts and ask 'what are the 3 most important points?'",
+    "Ask it to rewrite something in a specific tone: 'make this more direct' or 'less formal'",
+    "Paste a meeting transcript and ask 'list the action items and who owns each'",
+    "Ask 'what are the pros and cons?' before a decision to think it through faster",
+    "Turn rough notes into polished memos: paste your bullets and say 'turn this into a clear summary'",
+    "Ask it to check your logic: 'is there a flaw in this argument or plan?'",
+    "Draft SOPs and policy docs: describe what needs to happen and ask for a structured document",
+    "Compare two options: paste both proposals and ask for a side-by-side breakdown",
+    "Prep for tough conversations: 'what objections might I get and how should I respond?'",
+    "Ask it to simplify complex documents: 'explain this contract clause in plain English'",
+    "Use it to write performance feedback, review notes, or sensitive messages where tone matters",
+    "Ask 'what questions should I be asking about [topic]?' to stress-test your thinking",
+  ],
+  per: [
+    "Use it instead of Google when you need a synthesized answer, not just a list of links",
+    "Research a company before any meeting: 'what should I know about [company name]?'",
+    "Get competitor pricing benchmarks: 'what does [product category] typically cost?'",
+    "Ask for industry trends before a presentation so your data feels current",
+    "Fact-check numbers or claims quickly before sharing them in a meeting",
+    "Ask for product specs or technical standards instead of hunting through manufacturer docs",
+    "Use follow-up questions to drill deeper — it remembers context from your last question",
+    "Ask 'what are people saying about [topic] recently?' for a real-time pulse on the market",
+    "Use it to prep talking points: 'give me 5 things to know about [industry] right now'",
+    "Search for real user opinions before buying software or tools: 'what do users think of [product]?'",
+    "Ask it to summarize a news topic you haven't had time to follow",
+    "Use it for supplier or vendor research: 'who are the top providers of [service] and how do they compare?'",
+  ],
+};
+
+// Pick n random tips from the pool of tools the person actually used
+export function getToolTips(activeToolKeys: string[], count = 3): string[] {
+  const pool: string[] = activeToolKeys.flatMap(k => TOOL_TIPS[k] ?? []);
+  // Fisher-Yates shuffle
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}

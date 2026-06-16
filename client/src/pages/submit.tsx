@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, getCoachSuggestions, type ToolKey, type MetricKey } from "@/lib/scorecard";
+import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, getToolTips, type ToolKey, type MetricKey } from "@/lib/scorecard";
 import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -75,11 +75,11 @@ export default function SubmitPage() {
     const tools: Record<string, ToolScores> = {};
     activeTools.forEach(t => { tools[t] = scores[t]; });
 
-    // Silently determine if tips are warranted (B+ = encouragement only, below B = show tips)
+    // Silently determine if tips are warranted (B+ = no tips, below B = show tips for their tools)
     const avgPct = Math.round(
       activeTools.map(t => calcScore(scores[t]).pct).reduce((a, b) => a + b, 0) / activeTools.length
     );
-    setTips(avgPct < 64 ? getCoachSuggestions(effectiveTeam).slice(0, 3) : []);
+    setTips(avgPct < 64 ? getToolTips(activeTools, 3) : []);
 
     mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges });
   }
