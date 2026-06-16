@@ -191,11 +191,12 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   different scales depending on whether that optional field was filled. Grades are
   now always computed from the four self-reported dimensions (Frequency, Time
   saved, Impact, Adoption), normalized to a percentage.
-- **Message volume is now reference-only.** It is still recorded and editable per
-  submission in the admin detail view, but it no longer affects the grade —
+- **Message volume is now reference-only, and ChatGPT-only.** It is still recorded
+  and editable in the admin detail view, but it no longer affects the grade —
   message count (which ranged from ~10 to 400+) isn't a measure of *quality* of
-  use, and it only reflects ChatGPT, so folding it into Claude/Perplexity grades
-  was misleading. The field is relabeled to make clear it's context, not graded.
+  use. Since usage-export message counts are only available for ChatGPT, the input
+  now appears solely on the ChatGPT section (it was previously shown for every
+  tool, which was misleading). Relabeled to make clear it's context, not graded.
 
 ### Required environment variables (Render → Environment)
 

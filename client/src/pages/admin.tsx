@@ -1116,21 +1116,23 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isU
                   <span>{LABELS[m][ts[m]]}</span>
                 </div>
               ))}
-              <div className="mt-3 pt-3 border-t border-border no-print">
-                <label className="block text-xs text-muted-foreground mb-1.5">Message volume from usage exports (0–5) · reference only, not part of grade</label>
-                <div className="flex items-center gap-2">
-                  <input data-testid={`input-ov-${t}`} type="number" min={0} max={5}
-                    value={ovValues[t] ?? ""}
-                    onChange={e => setOvValues(prev => ({ ...prev, [t]: e.target.value }))}
-                    className="w-20 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
-                  <button data-testid={`button-save-ov-${t}`}
-                    onClick={() => { const v = parseInt(ovValues[t]); if (!isNaN(v) && v >= 0 && v <= 5) onSaveOV(t, v); }}
-                    disabled={isSavingOV}
-                    className="text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">
-                    {isSavingOV ? "Saving..." : "Save"}
-                  </button>
+              {t === "cgt" && (
+                <div className="mt-3 pt-3 border-t border-border no-print">
+                  <label className="block text-xs text-muted-foreground mb-1.5">ChatGPT message volume from usage exports (0–5) · reference only, not part of grade</label>
+                  <div className="flex items-center gap-2">
+                    <input data-testid={`input-ov-${t}`} type="number" min={0} max={5}
+                      value={ovValues[t] ?? ""}
+                      onChange={e => setOvValues(prev => ({ ...prev, [t]: e.target.value }))}
+                      className="w-20 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
+                    <button data-testid={`button-save-ov-${t}`}
+                      onClick={() => { const v = parseInt(ovValues[t]); if (!isNaN(v) && v >= 0 && v <= 5) onSaveOV(t, v); }}
+                      disabled={isSavingOV}
+                      className="text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">
+                      {isSavingOV ? "Saving..." : "Save"}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
