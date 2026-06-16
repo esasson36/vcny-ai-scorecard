@@ -92,14 +92,6 @@ export default function AdminPanel({ onLogout }: Props) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/submissions"] }); setView("dashboard"); },
   });
 
-  const ovMutation = useMutation({
-    mutationFn: async ({ id, tool, value }: { id: string; tool: string; value: number }) => {
-      const res = await apiRequest("PATCH", `/api/submissions/${id}/ov`, { tool, value });
-      return res.json();
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/submissions"] }),
-  });
-
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: { name?: string; team?: string; notes?: string } }) => {
       const res = await apiRequest("PATCH", `/api/submissions/${id}`, data);
@@ -150,7 +142,7 @@ export default function AdminPanel({ onLogout }: Props) {
   function exportCSV() {
     const TOOLS_MAP: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
     const rows: string[][] = [["Month", "Name", "Team", "Date", "Tool",
-      "Frequency", "Time Saved", "Impact", "Adoption", "Output Volume",
+      "Frequency", "Time Saved", "Impact", "Adoption",
       "Score", "Max", "Percent", "Grade", "Recommendation", "Use Cases", "Challenges"]];
     filteredSubs.forEach(sub => {
       const tools = parseTools(sub.tools);
@@ -162,7 +154,6 @@ export default function AdminPanel({ onLogout }: Props) {
           new Date(sub.timestamp).toLocaleDateString(),
           TOOLS_MAP[t] ?? t,
           LABELS.freq[ts.freq], LABELS.time[ts.time], LABELS.impact[ts.impact], LABELS.adopt[ts.adopt],
-          ts.outputVolume !== undefined ? String(ts.outputVolume) : "",
           String(sc.total), String(sc.max), sc.pct + "%", g, gradeAction(g),
           sub.useCases ?? "", sub.challenges ?? ""]);
       });
@@ -479,8 +470,6 @@ ${missing.length > 0
           <DetailView sub={activeSub}
             onBack={() => setView("dashboard")}
             onDelete={id => { if (confirm("Delete this submission permanently?")) deleteMutation.mutate(id); }}
-            onSaveOV={(tool, value) => ovMutation.mutate({ id: activeSub.id, tool, value })}
-            isSavingOV={ovMutation.isPending}
             onUpdate={(id, data) => updateMutation.mutate({ id, data })}
             isUpdating={updateMutation.isPending}
           />
@@ -980,20 +969,13 @@ function PersonView({ name, subs, onBack }: { name: string; subs: Submission[]; 
 }
 
 // ── Detail / Scorecard ────────────────────────────────────────────────────────
-function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isUpdating }: {
+function DetailView({ sub, onBack, onDelete, onUpdate, isUpdating }: {
   sub: Submission; onBack: () => void;
   onDelete: (id: string) => void;
-  onSaveOV: (tool: string, value: number) => void;
-  isSavingOV: boolean;
   onUpdate: (id: string, data: { name?: string; team?: string; notes?: string }) => void;
   isUpdating: boolean;
 }) {
   const tools = parseTools(sub.tools);
-  const [ovValues, setOvValues] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    Object.keys(tools).forEach(t => { init[t] = tools[t].outputVolume !== undefined ? String(tools[t].outputVolume) : ""; });
-    return init;
-  });
 
   // Edit mode for name / team
   const [editing, setEditing] = useState(false);
@@ -1116,23 +1098,6 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isU
                   <span>{LABELS[m][ts[m]]}</span>
                 </div>
               ))}
-              {t === "cgt" && (
-                <div className="mt-3 pt-3 border-t border-border no-print">
-                  <label className="block text-xs text-muted-foreground mb-1.5">ChatGPT message volume from usage exports (0–5) · reference only, not part of grade</label>
-                  <div className="flex items-center gap-2">
-                    <input data-testid={`input-ov-${t}`} type="number" min={0} max={5}
-                      value={ovValues[t] ?? ""}
-                      onChange={e => setOvValues(prev => ({ ...prev, [t]: e.target.value }))}
-                      className="w-20 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
-                    <button data-testid={`button-save-ov-${t}`}
-                      onClick={() => { const v = parseInt(ovValues[t]); if (!isNaN(v) && v >= 0 && v <= 5) onSaveOV(t, v); }}
-                      disabled={isSavingOV}
-                      className="text-sm border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">
-                      {isSavingOV ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}

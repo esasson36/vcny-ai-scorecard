@@ -191,12 +191,13 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   different scales depending on whether that optional field was filled. Grades are
   now always computed from the four self-reported dimensions (Frequency, Time
   saved, Impact, Adoption), normalized to a percentage.
-- **Message volume is now reference-only, and ChatGPT-only.** It is still recorded
-  and editable in the admin detail view, but it no longer affects the grade —
-  message count (which ranged from ~10 to 400+) isn't a measure of *quality* of
-  use. Since usage-export message counts are only available for ChatGPT, the input
-  now appears solely on the ChatGPT section (it was previously shown for every
-  tool, which was misleading). Relabeled to make clear it's context, not graded.
+- **Message volume removed from the UI.** It was first made reference-only and
+  ChatGPT-only, then pulled from the interface entirely while we reconsider what
+  objective metric (if any) is worth tracking — raw message count (~10 to 400+)
+  isn't a measure of *quality* of use. The admin input and the CSV "Output Volume"
+  column are gone. The underlying data, the `outputVolume` schema field, and the
+  `/api/submissions/:id/ov` route are intentionally left intact, so existing
+  values are preserved and re-enabling it later is a frontend-only change.
 
 ### Required environment variables (Render → Environment)
 
