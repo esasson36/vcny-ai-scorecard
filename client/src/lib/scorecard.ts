@@ -26,11 +26,12 @@ export interface ToolScores {
   outputVolume?: number;
 }
 
+// Grade is based only on the four self-reported dimensions (max 20), so every
+// person is scored on the same scale. outputVolume (ChatGPT message count) is
+// tracked separately as context and is intentionally NOT part of the grade.
 export function calcScore(scores: ToolScores): { total: number; max: number; pct: number } {
-  const self = scores.freq + scores.time + scores.impact + scores.adopt;
-  const hasOV = scores.outputVolume !== undefined && scores.outputVolume !== null;
-  const total = hasOV ? self + (scores.outputVolume as number) : self;
-  const max = hasOV ? 25 : 20;
+  const total = scores.freq + scores.time + scores.impact + scores.adopt;
+  const max = 20;
   return { total, max, pct: Math.round((total / max) * 100) };
 }
 

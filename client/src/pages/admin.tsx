@@ -1117,7 +1117,7 @@ function DetailView({ sub, onBack, onDelete, onSaveOV, isSavingOV, onUpdate, isU
                 </div>
               ))}
               <div className="mt-3 pt-3 border-t border-border no-print">
-                <label className="block text-xs text-muted-foreground mb-1.5">Output volume from usage exports (0–5)</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Message volume from usage exports (0–5) · reference only, not part of grade</label>
                 <div className="flex items-center gap-2">
                   <input data-testid={`input-ov-${t}`} type="number" min={0} max={5}
                     value={ovValues[t] ?? ""}

@@ -183,6 +183,20 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   - No score or grade is shown — tips are framed as "ways to get even more from AI"
   - A/B scorers see the standard success screen with no tip card
 
+### Later that day — scoring scale fix
+
+- **Grades now use a consistent /20 scale for everyone.** Previously a grade was
+  scored out of 25 when an admin had entered a "message volume" value (from
+  ChatGPT usage exports) and out of 20 when they hadn't — so people were graded on
+  different scales depending on whether that optional field was filled. Grades are
+  now always computed from the four self-reported dimensions (Frequency, Time
+  saved, Impact, Adoption), normalized to a percentage.
+- **Message volume is now reference-only.** It is still recorded and editable per
+  submission in the admin detail view, but it no longer affects the grade —
+  message count (which ranged from ~10 to 400+) isn't a measure of *quality* of
+  use, and it only reflects ChatGPT, so folding it into Claude/Perplexity grades
+  was misleading. The field is relabeled to make clear it's context, not graded.
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |
