@@ -1319,17 +1319,16 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
           {rankings.map((p, i) => {
             const g = pctToGrade(p.avg);
             return (
-              <div key={p.name} className="flex items-center gap-4 px-4 py-3 hover:bg-secondary/20 transition-colors">
+              <div key={p.name}
+                onClick={() => { const id = latestSubId(p.name, scopeSubs); if (id) onOpen(id); }}
+                className="flex items-center gap-4 px-4 py-3 hover:bg-secondary/20 transition-colors cursor-pointer">
                 <div className="w-7 text-center">
                   {i < 3
                     ? <span className="text-base font-bold" style={{ color: MEDALS[i] }}>#{i + 1}</span>
                     : <span className="text-sm text-muted-foreground font-mono">{i + 1}</span>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <button onClick={() => { const id = latestSubId(p.name, scopeSubs); if (id) onOpen(id); }}
-                    className="font-semibold text-sm truncate text-left hover:underline underline-offset-2 cursor-pointer block max-w-full">
-                    {p.name}
-                  </button>
+                  <div className="font-semibold text-sm truncate">{p.name}</div>
                   <div className="text-xs text-muted-foreground">{p.team}</div>
                 </div>
                 <div className="w-24 hidden sm:block">
@@ -1342,7 +1341,7 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
                   <GradeBadge grade={g} className="text-xl px-2 py-0.5" />
                 </div>
                 {p.months.size > 1 && (
-                  <button onClick={() => onOpenPerson(p.name)}
+                  <button onClick={e => { e.stopPropagation(); onOpenPerson(p.name); }}
                     className="text-[10px] uppercase tracking-wider border border-border rounded-full px-2 py-0.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors shrink-0"
                     style={{ fontFamily: "'Geist Mono', monospace" }}>Trend</button>
                 )}
@@ -1364,13 +1363,12 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
           <div className="bg-card border border-border rounded-sm overflow-hidden">
             <div className="divide-y divide-border">
               {mostImproved.map((p, i) => (
-                <div key={p.name} className="flex items-center gap-4 px-4 py-3">
+                <div key={p.name}
+                  onClick={() => { const id = latestSubId(p.name, monthScope); if (id) onOpen(id); }}
+                  className="flex items-center gap-4 px-4 py-3 hover:bg-secondary/20 transition-colors cursor-pointer">
                   <div className="w-7 text-center text-sm text-muted-foreground font-mono">{i + 1}</div>
                   <div className="flex-1 min-w-0">
-                    <button onClick={() => { const id = latestSubId(p.name, monthScope); if (id) onOpen(id); }}
-                      className="font-semibold text-sm text-left hover:underline underline-offset-2 cursor-pointer block max-w-full">
-                      {p.name}
-                    </button>
+                    <div className="font-semibold text-sm">{p.name}</div>
                     <div className="text-xs text-muted-foreground">{p.team}</div>
                   </div>
                   <div className="flex items-center gap-2 text-sm shrink-0">
