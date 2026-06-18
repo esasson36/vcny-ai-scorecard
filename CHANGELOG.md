@@ -226,6 +226,19 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   DEFAULT ''`). Until the column exists, submissions that include feedback will
   fail to save.
 
+### Same day — leaderboard & team-name polish
+
+- **`2bfdaf4` → `2cce83a`** — **Clickable leaderboard rows.** Clicking anywhere on
+  a person's row (This month, All time, or Most improved) now opens their most
+  recent submission in scope. Rows highlight on hover; the "Trend" button still
+  jumps to the multi-month trend view independently.
+- **`2e87beb`** — **Team-name casing is normalized on submit** to prevent
+  capitalization-only duplicate teams (e.g. "AI" vs "Ai" vs "ai"). When a
+  submitted team matches an existing team — or a standard dropdown team —
+  case-insensitively, it snaps to that canonical casing (standard teams take
+  priority, so free-text "hr" becomes "HR"). Existing rows are untouched and
+  admin edits remain authoritative.
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |
