@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, getToolTips, type ToolKey, type MetricKey } from "@/lib/scorecard";
+import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, getToolTips, FEEDBACK_KEYS, FEEDBACK_TOOLS, FEEDBACK_COLOR, type ToolKey, type FeedbackKey, type MetricKey } from "@/lib/scorecard";
 import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,11 @@ interface ToolScores {
 }
 
 const DEFAULT_SCORES: ToolScores = { freq: 3, time: 2, impact: 3, adopt: 2 };
+
+interface ManifastData { current: number; potential: number; questions: string; }
+interface PlaudeData { rating: number; timeSaved: number; continue: "" | "yes" | "maybe" | "no"; recommendFor: string; }
+const DEFAULT_MANIFAST: ManifastData = { current: 5, potential: 5, questions: "" };
+const DEFAULT_PLAUDE: PlaudeData = { rating: 5, timeSaved: 2, continue: "", recommendFor: "" };
 
 export default function SubmitPage() {
   const [name, setName] = useState("");
@@ -21,6 +26,9 @@ export default function SubmitPage() {
     cla: { ...DEFAULT_SCORES },
     per: { ...DEFAULT_SCORES },
   });
+  const [fbSelected, setFbSelected] = useState<Record<FeedbackKey, boolean>>({ manifast: false, plaude: false });
+  const [manifast, setManifast] = useState<ManifastData>({ ...DEFAULT_MANIFAST });
+  const [plaude, setPlaude] = useState<PlaudeData>({ ...DEFAULT_PLAUDE });
   const [useCases, setUseCases] = useState("");
   const [challenges, setChallenges] = useState("");
   const [error, setError] = useState("");
@@ -71,17 +79,32 @@ export default function SubmitPage() {
     if (!name.trim() || !team) { setError("Please add your name and team."); return; }
     if (team === "Other" && !otherTeam.trim()) { setError("Please enter your team name."); return; }
     const activeTools = TOOL_KEYS.filter(t => selected[t]);
-    if (activeTools.length === 0) { setError("Please select at least one tool you use."); return; }
+    const activeFb = FEEDBACK_KEYS.filter(t => fbSelected[t]);
+    if (activeTools.length === 0 && activeFb.length === 0) {
+      setError("Please select at least one tool you use."); return;
+    }
     const tools: Record<string, ToolScores> = {};
     activeTools.forEach(t => { tools[t] = scores[t]; });
 
-    // Silently determine if tips are warranted (B+ = no tips, below B = show tips for their tools)
-    const avgPct = Math.round(
-      activeTools.map(t => calcScore(scores[t]).pct).reduce((a, b) => a + b, 0) / activeTools.length
-    );
-    setTips(avgPct < 64 ? getToolTips(activeTools, effectiveTeam, 3) : []);
+    // Feedback for the non-graded evaluation tools
+    const feedback: { manifast?: ManifastData; plaude?: Omit<PlaudeData, "continue"> & { continue?: "yes" | "maybe" | "no" } } = {};
+    if (fbSelected.manifast) feedback.manifast = manifast;
+    if (fbSelected.plaude) {
+      const { continue: cont, ...rest } = plaude;
+      feedback.plaude = cont ? { ...rest, continue: cont } : rest;
+    }
 
-    mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges });
+    // Tips are based only on the graded tools (feedback tools aren't graded)
+    if (activeTools.length > 0) {
+      const avgPct = Math.round(
+        activeTools.map(t => calcScore(scores[t]).pct).reduce((a, b) => a + b, 0) / activeTools.length
+      );
+      setTips(avgPct < 64 ? getToolTips(activeTools, effectiveTeam, 3) : []);
+    } else {
+      setTips([]);
+    }
+
+    mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges, feedback });
   }
 
   if (submitted) {
@@ -111,7 +134,7 @@ export default function SubmitPage() {
           )}
 
           <button
-            onClick={() => { setSubmitted(false); setTips([]); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); }}
+            onClick={() => { setSubmitted(false); setTips([]); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); setFbSelected({ manifast: false, plaude: false }); setManifast({ ...DEFAULT_MANIFAST }); setPlaude({ ...DEFAULT_PLAUDE }); }}
             className="text-sm border border-input rounded-sm px-5 py-2 hover:border-foreground hover:bg-foreground hover:text-background transition-all"
           >
             Submit another
@@ -203,12 +226,35 @@ export default function SubmitPage() {
                   </button>
                 );
               })}
+              {FEEDBACK_KEYS.map(t => {
+                const color = FEEDBACK_COLOR[t];
+                const on = fbSelected[t];
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    data-testid={`check-${t}`}
+                    onClick={() => setFbSelected(prev => ({ ...prev, [t]: !prev[t] }))}
+                    className={cn(
+                      "tool-card",
+                      on ? "selected" : "opacity-60 hover:opacity-90"
+                    )}
+                    style={on ? { borderColor: color, background: `color-mix(in srgb, ${color} 8%, transparent)` } : undefined}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                    <span className="text-sm font-semibold" style={on ? { color } : undefined}>
+                      {FEEDBACK_TOOLS[t]}
+                    </span>
+                    {on && <CheckCircle2 className="w-4 h-4 ml-1 animate-pop-in" style={{ color }} />}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
         {/* Tool sections */}
-        {TOOL_KEYS.some(t => selected[t]) && (
+        {(TOOL_KEYS.some(t => selected[t]) || FEEDBACK_KEYS.some(t => fbSelected[t])) && (
           <div className="flex items-center gap-3 mb-3 mt-7 animate-fade-up">
             <span className="section-num">02</span>
             <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>Rate your tools</h2>
@@ -217,11 +263,13 @@ export default function SubmitPage() {
         {TOOL_KEYS.filter(t => selected[t]).map(t => (
           <ToolSection key={t} toolKey={t} scores={scores[t]} onChange={(m, v) => setScore(t, m, v)} />
         ))}
+        {fbSelected.manifast && <ManifastSection data={manifast} onChange={setManifast} />}
+        {fbSelected.plaude && <PlaudeSection data={plaude} onChange={setPlaude} />}
 
         {/* Use cases + challenges */}
         <div className="bg-card border border-border rounded-sm p-6 mb-4 mt-7 animate-fade-up" style={{ animationDelay: "120ms" }}>
           <div className="flex items-center gap-3 mb-4">
-            <span className="section-num">{TOOL_KEYS.some(t => selected[t]) ? "03" : "02"}</span>
+            <span className="section-num">{(TOOL_KEYS.some(t => selected[t]) || FEEDBACK_KEYS.some(t => fbSelected[t])) ? "03" : "02"}</span>
             <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>In your own words</h2>
           </div>
           <div className="mb-4">
@@ -340,5 +388,98 @@ function SliderRow({ toolKey, metricKey, label, value, onChange }: {
         {LABELS[metricKey][value]}
       </span>
     </div>
+  );
+}
+
+// ── Feedback tools (non-graded) ──────────────────────────────────────────────
+
+// Generic labelled slider with a brand-colored fill. Works for any min/max.
+function FbSlider({ label, value, min, max, color, display, onChange }: {
+  label: string; value: number; min: number; max: number; color: string;
+  display: string; onChange: (v: number) => void;
+}) {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div className="grid grid-cols-[110px_1fr_72px] sm:grid-cols-[150px_1fr_90px] gap-2.5 sm:gap-3 items-center">
+      <span className="text-[13px] sm:text-sm font-medium text-foreground">{label}</span>
+      <input
+        type="range"
+        min={min} max={max} step={1}
+        value={value}
+        onChange={e => onChange(parseInt(e.target.value))}
+        className="w-full"
+        style={{ background: `linear-gradient(to right, ${color} 0%, ${color} ${pct}%, hsl(var(--input)) ${pct}%, hsl(var(--input)) 100%)` }}
+      />
+      <span className="text-[12px] sm:text-sm font-semibold text-right" style={{ color }}>{display}</span>
+    </div>
+  );
+}
+
+function FbShell({ name, color, children }: { name: string; color: string; children: ReactNode }) {
+  return (
+    <div className="border-l-[3px] pl-4 pr-4 py-3.5 mb-4 bg-card rounded-r-sm animate-slide-down" style={{ borderColor: color }}>
+      <span className="inline-block text-xs font-semibold px-3 py-1 rounded-full mb-3 text-white" style={{ background: color }}>{name}</span>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function ManifastSection({ data, onChange }: { data: ManifastData; onChange: (d: ManifastData) => void }) {
+  const color = FEEDBACK_COLOR.manifast;
+  return (
+    <FbShell name={FEEDBACK_TOOLS.manifast} color={color}>
+      <FbSlider label="Current product" value={data.current} min={1} max={10} color={color}
+        display={`${data.current}/10`} onChange={v => onChange({ ...data, current: v })} />
+      <FbSlider label="Its potential" value={data.potential} min={1} max={10} color={color}
+        display={`${data.potential}/10`} onChange={v => onChange({ ...data, potential: v })} />
+      <div>
+        <label className="block text-[13px] sm:text-sm font-medium text-foreground mb-1.5">Any questions or comments?</label>
+        <textarea
+          value={data.questions}
+          onChange={e => onChange({ ...data, questions: e.target.value })}
+          placeholder="Anything you're wondering about, or feedback on the product..."
+          className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors resize-y min-h-[56px]"
+        />
+      </div>
+    </FbShell>
+  );
+}
+
+function PlaudeSection({ data, onChange }: { data: PlaudeData; onChange: (d: PlaudeData) => void }) {
+  const color = FEEDBACK_COLOR.plaude;
+  const opts: PlaudeData["continue"][] = ["yes", "maybe", "no"];
+  return (
+    <FbShell name={FEEDBACK_TOOLS.plaude} color={color}>
+      <FbSlider label="Rate this product" value={data.rating} min={1} max={10} color={color}
+        display={`${data.rating}/10`} onChange={v => onChange({ ...data, rating: v })} />
+      <FbSlider label="Time saved/wk" value={data.timeSaved} min={0} max={5} color={color}
+        display={LABELS.time[data.timeSaved]} onChange={v => onChange({ ...data, timeSaved: v })} />
+      <div className="grid grid-cols-[110px_1fr] sm:grid-cols-[150px_1fr] gap-2.5 sm:gap-3 items-center">
+        <span className="text-[13px] sm:text-sm font-medium text-foreground">Will you keep using it?</span>
+        <div className="flex gap-2">
+          {opts.map(o => {
+            const on = data.continue === o;
+            return (
+              <button key={o} type="button"
+                onClick={() => onChange({ ...data, continue: on ? "" : o })}
+                className={cn("text-xs font-semibold px-3 py-1.5 rounded-sm border-[1.5px] transition-colors capitalize",
+                  on ? "text-white" : "text-foreground border-input hover:border-foreground")}
+                style={on ? { background: color, borderColor: color } : undefined}>
+                {o}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <label className="block text-[13px] sm:text-sm font-medium text-foreground mb-1.5">Who would you recommend this for?</label>
+        <textarea
+          value={data.recommendFor}
+          onChange={e => onChange({ ...data, recommendFor: e.target.value })}
+          placeholder="e.g. anyone who takes a lot of meeting notes, the sales team..."
+          className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors resize-y min-h-[56px]"
+        />
+      </div>
+    </FbShell>
   );
 }

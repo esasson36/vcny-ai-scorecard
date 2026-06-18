@@ -5,6 +5,7 @@ import type { Submission } from "@shared/schema";
 import {
   TOOLS, TOOL_KEYS, LABELS, type ToolKey, type MetricKey,
   calcScore, pctToGrade, gradeAction, gradeClass,
+  FEEDBACK_KEYS, FEEDBACK_TOOLS, FEEDBACK_COLOR, CONTINUE_LABELS, type FeedbackKey,
 } from "@/lib/scorecard";
 import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-react";
 import { Line } from "react-chartjs-2";
@@ -19,6 +20,19 @@ type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "tea
 
 function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
+}
+
+function parseFeedback(sub: Submission): Record<string, any> {
+  try { return JSON.parse((sub as any).feedback || "{}"); } catch { return {}; }
+}
+
+function hasFeedback(sub: Submission): boolean {
+  const f = parseFeedback(sub);
+  return FEEDBACK_KEYS.some(k => f[k]);
+}
+
+function hasGradedTools(sub: Submission): boolean {
+  return Object.keys(parseTools(sub.tools)).length > 0;
 }
 
 function GradeBadge({ grade, className = "" }: { grade: string; className?: string }) {
@@ -580,11 +594,14 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
         <div className="space-y-2">
           {subs.map((sub, i) => {
             const tools = parseTools(sub.tools);
+            const graded = Object.keys(tools).length > 0;
+            const fb = parseFeedback(sub);
+            const fbKeys = FEEDBACK_KEYS.filter(k => fb[k]);
             const hasMultiple = allSubs.filter(s => s.name === sub.name).length > 1;
             const prevSub = allSubs
-              .filter(s => s.name === sub.name && getMonth(s) < getMonth(sub))
+              .filter(s => s.name === sub.name && getMonth(s) < getMonth(sub) && hasGradedTools(s))
               .sort((a, b) => getMonth(b).localeCompare(getMonth(a)))[0];
-            const delta = prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
+            const delta = graded && prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
             const overallG = pctToGrade(subOverallPct(sub));
             return (
               <div key={sub.id} onClick={() => onOpen(sub.id)}
@@ -616,7 +633,13 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <GradeBadge grade={overallG} className="text-lg px-2 py-0.5" />
+                    {graded ? (
+                      <GradeBadge grade={overallG} className="text-lg px-2 py-0.5" />
+                    ) : (
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-sm bg-secondary text-muted-foreground font-semibold" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                        Feedback
+                      </span>
+                    )}
                     <button onClick={e => { e.stopPropagation(); onOpen(sub.id); }}
                       className="text-xs border border-border rounded-sm px-2.5 py-1 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
                       View →
@@ -633,6 +656,11 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                       </span>
                     );
                   })}
+                  {fbKeys.map(k => (
+                    <span key={k} className="text-xs font-semibold px-2.5 py-0.5 rounded-full text-white" style={{ background: FEEDBACK_COLOR[k] }}>
+                      {FEEDBACK_TOOLS[k]}
+                    </span>
+                  ))}
                 </div>
               </div>
             );
@@ -673,6 +701,47 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                   <span key={e.name} className="text-sm text-foreground/80">{e.name}</span>
                 ))}
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Product feedback (Manifast / Plaude) — not graded */}
+      {(() => {
+        const withFb = subs.filter(hasFeedback);
+        if (withFb.length === 0) return null;
+        return (
+          <div className="mt-8">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>
+              Product feedback{selectedMonth !== "all" ? ` · ${fmtMonth(selectedMonth)}` : ""}
+            </h2>
+            <div className="space-y-2">
+              {withFb.map(sub => {
+                const fb = parseFeedback(sub);
+                return (
+                  <div key={sub.id} onClick={() => onOpen(sub.id)}
+                    className="card-lift bg-card border border-border rounded-sm px-4 py-3 cursor-pointer hover:border-foreground/30">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-semibold text-sm">{sub.name} <span className="text-muted-foreground font-normal">· {sub.team}</span></span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {FEEDBACK_KEYS.filter(k => fb[k]).map(k => {
+                        const d = fb[k];
+                        return (
+                          <div key={k} className="flex items-start gap-2 text-xs">
+                            <span className="shrink-0 font-semibold px-2 py-0.5 rounded-full text-white" style={{ background: FEEDBACK_COLOR[k] }}>{FEEDBACK_TOOLS[k]}</span>
+                            <span className="text-foreground/80 pt-0.5">
+                              {k === "manifast"
+                                ? <>Current <b>{d.current}/10</b> · Potential <b>{d.potential}/10</b>{d.questions ? ` · “${d.questions}”` : ""}</>
+                                : <>Rated <b>{d.rating}/10</b> · Saved {LABELS.time[d.timeSaved] ?? "—"} · Keep using: <b>{d.continue ? CONTINUE_LABELS[d.continue] : "—"}</b>{d.recommendFor ? ` · For: ${d.recommendFor}` : ""}</>}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -1101,6 +1170,38 @@ function DetailView({ sub, onBack, onDelete, onUpdate, isUpdating }: {
             </div>
           );
         })}
+
+        {/* Feedback tools (Manifast / Plaude) — not graded */}
+        {(() => {
+          const fb = parseFeedback(sub);
+          return FEEDBACK_KEYS.filter(k => fb[k]).map(k => {
+            const d = fb[k];
+            return (
+              <div key={k} className="mt-4 pt-4 border-t border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold px-3 py-1 rounded-full text-white" style={{ background: FEEDBACK_COLOR[k] }}>{FEEDBACK_TOOLS[k]}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Feedback · not graded</span>
+                </div>
+                {k === "manifast" && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between py-1 text-sm"><span className="text-muted-foreground">Current product</span><span className="font-semibold">{d.current}/10</span></div>
+                    <div className="flex justify-between py-1 text-sm"><span className="text-muted-foreground">Potential</span><span className="font-semibold">{d.potential}/10</span></div>
+                    {d.questions && (<div className="pt-2"><label className="block text-xs font-medium text-muted-foreground mb-1">Questions / comments</label><p className="text-sm">{d.questions}</p></div>)}
+                  </div>
+                )}
+                {k === "plaude" && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between py-1 text-sm"><span className="text-muted-foreground">Product rating</span><span className="font-semibold">{d.rating}/10</span></div>
+                    <div className="flex justify-between py-1 text-sm"><span className="text-muted-foreground">Time saved/week</span><span className="font-semibold">{LABELS.time[d.timeSaved] ?? "—"}</span></div>
+                    <div className="flex justify-between py-1 text-sm"><span className="text-muted-foreground">Will keep using it</span><span className="font-semibold">{d.continue ? CONTINUE_LABELS[d.continue] : "—"}</span></div>
+                    {d.recommendFor && (<div className="pt-2"><label className="block text-xs font-medium text-muted-foreground mb-1">Would recommend for</label><p className="text-sm">{d.recommendFor}</p></div>)}
+                  </div>
+                )}
+              </div>
+            );
+          });
+        })()}
+
         {sub.useCases && (
           <div className="mt-5 pt-5 border-t border-border">
             <label className="block text-xs font-medium text-muted-foreground mb-1.5">Top use cases</label>

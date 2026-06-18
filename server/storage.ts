@@ -26,6 +26,7 @@ interface Row {
   timestamp: string;
   month: string;
   notes: string | null;
+  feedback: string | null;
 }
 
 function toSubmission(r: Row): Submission {
@@ -39,6 +40,7 @@ function toSubmission(r: Row): Submission {
     timestamp: r.timestamp,
     month: r.month,
     notes: r.notes ?? "",
+    feedback: r.feedback ?? "",
   };
 }
 
@@ -90,6 +92,7 @@ export const storage: IStorage = {
       timestamp: now,
       month,
       notes: "",
+      feedback: data.feedback ?? "",
     };
     const { error } = await supabase.from("submissions").insert(row);
     if (error) throw error;

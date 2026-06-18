@@ -97,13 +97,19 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (!result.success) {
       return res.status(400).json({ error: result.error.flatten() });
     }
-    const { name, team, tools, useCases, challenges } = result.data;
+    const { name, team, tools, useCases, challenges, feedback } = result.data;
+    const hasFeedback = feedback && (feedback.manifast || feedback.plaude);
+    // A submission must have at least one graded tool OR some feedback
+    if (Object.keys(tools).length === 0 && !hasFeedback) {
+      return res.status(400).json({ error: "Select at least one tool or fill in feedback." });
+    }
     const submission = await storage.createSubmission({
       name,
       team,
       tools: JSON.stringify(tools),
       useCases: useCases ?? "",
       challenges: challenges ?? "",
+      feedback: hasFeedback ? JSON.stringify(feedback) : "",
     });
     res.status(201).json(submission);
   });

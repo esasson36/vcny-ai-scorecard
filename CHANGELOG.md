@@ -199,6 +199,33 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   `/api/submissions/:id/ov` route are intentionally left intact, so existing
   values are preserved and re-enabling it later is a frontend-only change.
 
+## 2026-06-18 — Manifast & Plaude feedback tools
+
+- **Added two new AI options to the form: Manifast and Plaude.** Unlike
+  ChatGPT/Claude/Perplexity (which share the four-slider → A–F grade model),
+  these are **product-evaluation surveys** with their own questions and 1–10
+  scales. They are deliberately **not graded** and stay out of the A–F grades,
+  KPIs, leaderboard, and team averages.
+  - **Manifast:** "Rate the current product" (1–10), "Rate its potential" (1–10),
+    and an open questions/comments box.
+  - **Plaude:** "Rate this product" (1–10), "Time saved/week" (None → 10+ hrs
+    scale), "Will you keep using it?" (Yes / Maybe / No), and "Who would you
+    recommend this for?" (text).
+- **Stored separately.** A new `feedback` column on `submissions` holds this data
+  as JSON, completely separate from the graded `tools` blob, so the entire
+  grading pipeline is untouched. A submission is now valid with *either* graded
+  tools *or* feedback (someone can submit Plaude feedback without rating any of
+  the three core tools).
+- **Admin surfacing.** Feedback-only submissions show a "Feedback" tag instead of
+  a grade in the submissions list; each submission's detail view shows the full
+  Manifast/Plaude responses; and a new **Product feedback** section on the
+  dashboard collects every Manifast/Plaude response for the selected month in one
+  place.
+- **Migration required:** run `migrations/add-feedback-column.sql` in the Supabase
+  SQL Editor (`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS feedback text
+  DEFAULT ''`). Until the column exists, submissions that include feedback will
+  fail to save.
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |

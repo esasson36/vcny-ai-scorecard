@@ -7,6 +7,23 @@ export const TOOLS: Record<string, string> = {
 export const TOOL_KEYS = ["cgt", "cla", "per"] as const;
 export type ToolKey = typeof TOOL_KEYS[number];
 
+// Non-graded evaluation tools — their own question sets, not folded into A–F grades
+export const FEEDBACK_KEYS = ["manifast", "plaude"] as const;
+export type FeedbackKey = typeof FEEDBACK_KEYS[number];
+export const FEEDBACK_TOOLS: Record<FeedbackKey, string> = {
+  manifast: "Manifast",
+  plaude: "Plaude",
+};
+export const FEEDBACK_COLOR: Record<FeedbackKey, string> = {
+  manifast: "#0d9488", // teal
+  plaude: "#7c3aed",   // violet
+};
+export const CONTINUE_LABELS: Record<string, string> = {
+  yes: "Yes",
+  maybe: "Maybe",
+  no: "No",
+};
+
 export const TEAMS = ["Marketing", "Merchandising", "Design", "Executive", "HR", "Sales", "Other"];
 
 export const LABELS = {
