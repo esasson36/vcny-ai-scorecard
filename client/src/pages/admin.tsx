@@ -461,6 +461,7 @@ ${missing.length > 0
         {view === "leaderboard" && (
           <LeaderboardView
             allSubs={subs} allMonths={allMonths}
+            onOpen={id => { setActiveId(id); setView("detail"); }}
             onOpenPerson={name => { setActivePerson(name); setView("person"); }}
           />
         )}
@@ -1246,12 +1247,20 @@ function DetailView({ sub, onBack, onDelete, onUpdate, isUpdating }: {
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
-function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
+function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
   allSubs: Submission[];
   allMonths: string[];
+  onOpen: (id: string) => void;
   onOpenPerson: (name: string) => void;
 }) {
   const latestMonth = allMonths[0] ?? "";
+  const monthScope = allSubs.filter(s => getMonth(s) === latestMonth);
+
+  // Most recent submission id for a person within a given set of submissions
+  function latestSubId(name: string, scope: Submission[]) {
+    const list = scope.filter(s => s.name === name).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return list[0]?.id;
+  }
 
   function buildRankings(subs: Submission[]) {
     const map = new Map<string, { name: string; team: string; pcts: number[]; months: Set<string> }>();
@@ -1298,7 +1307,7 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
   const mostImproved = buildMostImproved();
   const MEDALS = ["#F4C542", "#A8A9AD", "#CD7F32"];
 
-  function RankTable({ rankings, label }: { rankings: ReturnType<typeof buildRankings>; label: string }) {
+  function RankTable({ rankings, label, scopeSubs }: { rankings: ReturnType<typeof buildRankings>; label: string; scopeSubs: Submission[] }) {
     if (!rankings.length) return (
       <div className="bg-card border border-border rounded-sm p-6 text-center text-sm text-muted-foreground">
         No submissions yet for {label}.
@@ -1317,7 +1326,10 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
                     : <span className="text-sm text-muted-foreground font-mono">{i + 1}</span>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate">{p.name}</div>
+                  <button onClick={() => { const id = latestSubId(p.name, scopeSubs); if (id) onOpen(id); }}
+                    className="font-semibold text-sm truncate text-left hover:underline underline-offset-2 cursor-pointer block max-w-full">
+                    {p.name}
+                  </button>
                   <div className="text-xs text-muted-foreground">{p.team}</div>
                 </div>
                 <div className="w-24 hidden sm:block">
@@ -1355,7 +1367,10 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
                 <div key={p.name} className="flex items-center gap-4 px-4 py-3">
                   <div className="w-7 text-center text-sm text-muted-foreground font-mono">{i + 1}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm">{p.name}</div>
+                    <button onClick={() => { const id = latestSubId(p.name, monthScope); if (id) onOpen(id); }}
+                      className="font-semibold text-sm text-left hover:underline underline-offset-2 cursor-pointer block max-w-full">
+                      {p.name}
+                    </button>
                     <div className="text-xs text-muted-foreground">{p.team}</div>
                   </div>
                   <div className="flex items-center gap-2 text-sm shrink-0">
@@ -1375,12 +1390,12 @@ function LeaderboardView({ allSubs, allMonths, onOpenPerson }: {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>
           {latestMonth ? fmtMonth(latestMonth) : "This month"}
         </h2>
-        <RankTable rankings={monthRankings} label={latestMonth ? fmtMonth(latestMonth) : "this month"} />
+        <RankTable rankings={monthRankings} label={latestMonth ? fmtMonth(latestMonth) : "this month"} scopeSubs={monthScope} />
       </div>
 
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>All time</h2>
-        <RankTable rankings={allTimeRankings} label="all submissions" />
+        <RankTable rankings={allTimeRankings} label="all submissions" scopeSubs={allSubs} />
       </div>
     </div>
   );
