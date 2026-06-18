@@ -56,6 +56,7 @@ export interface IStorage {
   getHeadcounts(): Promise<Record<string, number>>;
   setHeadcount(team: string, count: number): Promise<void>;
   getEmployees(): Promise<{ name: string; team: string }[]>;
+  getDistinctTeams(): Promise<string[]>;
 }
 
 export const storage: IStorage = {
@@ -183,5 +184,13 @@ export const storage: IStorage = {
       seen.add(key);
       return true;
     });
+  },
+
+  async getDistinctTeams(): Promise<string[]> {
+    const { data, error } = await supabase.from("submissions").select("team");
+    if (error) throw error;
+    const set = new Set<string>();
+    ((data as { team: string }[]) ?? []).forEach(r => { if (r.team) set.add(r.team); });
+    return [...set];
   },
 };

@@ -103,9 +103,17 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (Object.keys(tools).length === 0 && !hasFeedback) {
       return res.status(400).json({ error: "Select at least one tool or fill in feedback." });
     }
+    // Canonicalize team casing: if a team already exists with the same letters in
+    // different case (e.g. "AI" vs "ai"), reuse the existing casing so we never
+    // create a duplicate team that differs only by capitalization. The standard
+    // dropdown teams take priority so free-text "hr" snaps to "HR".
+    const STANDARD_TEAMS = ["Marketing", "Merchandising", "Design", "Executive", "HR", "Sales"];
+    const existingTeams = await storage.getDistinctTeams();
+    const candidates = [...STANDARD_TEAMS, ...existingTeams];
+    const canonicalTeam = candidates.find(t => t.toLowerCase().trim() === team.toLowerCase().trim()) ?? team.trim();
     const submission = await storage.createSubmission({
       name,
-      team,
+      team: canonicalTeam,
       tools: JSON.stringify(tools),
       useCases: useCases ?? "",
       challenges: challenges ?? "",
