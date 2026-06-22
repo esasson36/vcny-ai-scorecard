@@ -1553,24 +1553,24 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
     const pcts = scope.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
     const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
     const grade = avg != null ? pctToGrade(avg) : null;
-    const cost = costs[t] ?? 0;
-    const perUser = users.size > 0 ? cost / users.size : null;
+    const perUser = costs[t] ?? 0;            // input: cost per user / seat
+    const monthlySpend = perUser * users.size; // computed: what we spend on this tool
     let status = { label: "Set a cost to see ROI", cls: "text-muted-foreground" };
-    if (cost > 0) {
+    if (perUser > 0) {
       if (users.size === 0) status = { label: "No active users — review", cls: "text-red-600 dark:text-red-400" };
       else if (grade === "D" || grade === "F") status = { label: "Low ROI — review", cls: "text-red-600 dark:text-red-400" };
       else if (grade === "A" || grade === "B") status = { label: "Strong ROI", cls: "text-emerald-600 dark:text-emerald-400" };
       else status = { label: "Moderate ROI", cls: "text-amber-600 dark:text-amber-400" };
     }
-    return { t, users: users.size, avg, grade, cost, perUser, status };
+    return { t, users: users.size, avg, grade, perUser, monthlySpend, status };
   });
-  const totalSpend = TOOL_KEYS.reduce((s, t) => s + (costs[t] ?? 0), 0);
+  const totalSpend = rows.reduce((s, r) => s + r.monthlySpend, 0);
 
   return (
     <div>
       <p className="text-sm text-muted-foreground mb-5">
-        Cost-per-user and grades reflect {latest ? <b>{fmtMonth(latest)}</b> : "all submissions"} — your most recent month of data.
-        Enter what VCNY pays per tool per month to see which licenses are pulling their weight.
+        Active users and grades reflect {latest ? <b>{fmtMonth(latest)}</b> : "all submissions"} — your most recent month of data.
+        Enter what VCNY pays <b>per user</b> for each tool; monthly spend is that times the number of active users.
       </p>
 
       <div className="space-y-3">
@@ -1582,7 +1582,7 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
               <div>
-                <label className="block text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Monthly cost</label>
+                <label className="block text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Cost per user</label>
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm text-muted-foreground">$</span>
                   <input type="number" min={0} step="0.01"
@@ -1599,8 +1599,8 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
                 <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.users}</div>
               </div>
               <div>
-                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Cost / user</div>
-                <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.perUser != null ? money(r.perUser) : "—"}</div>
+                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Monthly spend</div>
+                <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.perUser > 0 ? money(r.monthlySpend) : "—"}</div>
               </div>
               <div>
                 <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Avg grade</div>
@@ -1611,9 +1611,15 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
         ))}
       </div>
 
-      <div className="mt-4 flex items-center justify-between bg-secondary/40 border border-border rounded-sm px-4 py-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Total monthly spend</span>
-        <span className="text-lg font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>{money(totalSpend)}</span>
+      <div className="mt-4 bg-secondary/40 border border-border rounded-sm px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Total monthly spend</span>
+          <span className="text-lg font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>{money(totalSpend)}</span>
+        </div>
+        <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border/60">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Projected yearly spend</span>
+          <span className="text-sm font-medium text-muted-foreground" style={{ fontFamily: "'Fraunces', serif" }}>{money(totalSpend * 12)}</span>
+        </div>
       </div>
     </div>
   );
