@@ -89,6 +89,7 @@ export default function AdminPanel({ onLogout }: Props) {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [compareA, setCompareA] = useState<string>("");
   const [compareB, setCompareB] = useState<string>("");
+  const [reportBusy, setReportBusy] = useState(false);
   const qc = useQueryClient();
 
   const { data: subs = [], isFetching, refetch } = useQuery<Submission[]>({
@@ -216,7 +217,9 @@ export default function AdminPanel({ onLogout }: Props) {
     URL.revokeObjectURL(url);
   }
 
-  function exportReport() {
+  async function exportReport() {
+    setReportBusy(true);
+    try {
     const esc = (s: string) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     const TOOLS_MAP: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
     const monthLabel = selectedMonth === "all" ? "All Time" : fmtMonth(selectedMonth);
@@ -271,6 +274,35 @@ export default function AdminPanel({ onLogout }: Props) {
     const sectionHead = (label: string) =>
       `<p style="font-family:Arial,sans-serif;font-size:8pt;color:#999999;border-bottom:1pt solid #cccccc;padding-bottom:3pt;margin:20pt 0 8pt">${label.toUpperCase()}</p>`;
 
+    // Ask Claude for an executive summary (skipped gracefully if the key isn't set)
+    let aiSummary = "";
+    try {
+      const stats = {
+        month: monthLabel,
+        submissions: filteredSubs.length,
+        employees: employees.length || null,
+        responseRatePct: employees.length ? Math.round(((employees.length - missing.length) / employees.length) * 100) : null,
+        outstanding: employees.length ? missing.length : null,
+        overallGrade, overallPct,
+        gradeCounts,
+        tools: TOOL_KEYS.map(t => {
+          const pcts = personData.flatMap(r => r.toolRows.filter(x => x.key === t).map(x => x.sc.pct));
+          return { tool: TOOLS[t], users: pcts.length, avgPct: pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null };
+        }).filter(x => x.users > 0),
+        teams: Array.from(byTeam.entries()).map(([team, members]) => ({
+          team, members: members.length,
+          avgPct: Math.round(members.reduce((s, r) => s + r.avgPct, 0) / members.length),
+        })),
+        needsAttention: rosterSorted.filter(r => ["C", "D", "F"].includes(r.overallGrade)).map(r => ({ name: r.sub.name, team: r.sub.team, grade: r.overallGrade })),
+        topPerformers: rosterSorted.filter(r => ["A", "B"].includes(r.overallGrade)).map(r => ({ name: r.sub.name, team: r.sub.team, grade: r.overallGrade })),
+      };
+      const res = await apiRequest("POST", "/api/report-summary", { stats });
+      const data = await res.json();
+      aiSummary = (data.summary || "").trim();
+    } catch {
+      // No API key configured, or the call failed — produce the report without the summary
+    }
+
     const html = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
@@ -291,6 +323,9 @@ export default function AdminPanel({ onLogout }: Props) {
 <p style="font-size:8pt;color:#888888;font-family:Arial,sans-serif;margin-bottom:4pt">VCNY &middot; AI SCORECARD</p>
 <p style="font-family:Georgia,serif;font-size:26pt;font-weight:normal;color:#111111;margin-bottom:3pt">Audit Report</p>
 <p style="font-size:10pt;color:#666666;border-bottom:2pt solid #111111;padding-bottom:12pt;margin-bottom:0">Period: ${esc(monthLabel)} &nbsp;&middot;&nbsp; ${filteredSubs.length} submission${filteredSubs.length !== 1 ? "s" : ""} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
+
+${aiSummary ? `${sectionHead("Executive Summary")}
+<p style="font-size:10.5pt;color:#222222;line-height:1.55;margin-bottom:6pt">${esc(aiSummary)}</p>` : ""}
 
 ${sectionHead("Overview")}
 <table style="margin-bottom:14pt">
@@ -395,6 +430,9 @@ ${missing.length > 0
     a.download = `vcny-ai-report-${suffix}.doc`;
     a.click();
     URL.revokeObjectURL(url);
+    } finally {
+      setReportBusy(false);
+    }
   }
 
   const viewTitle: Record<View, string> = {
@@ -427,11 +465,11 @@ ${missing.length > 0
               style={{ fontFamily: "'Geist Mono', monospace" }}>
               <RefreshCw className={cn("w-3 h-3", isFetching && "animate-spin")} />Refresh
             </button>
-            <button onClick={exportReport} disabled={filteredSubs.length === 0}
+            <button onClick={exportReport} disabled={filteredSubs.length === 0 || reportBusy}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
               style={{ fontFamily: "'Geist Mono', monospace" }}
-              title={`Download audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
-              ↓ Report · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
+              title={`Download audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)} (includes an AI-written executive summary)`}>
+              {reportBusy ? "Generating…" : `↓ Report · ${selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}`}
             </button>
             <button onClick={exportCSV} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"

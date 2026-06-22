@@ -254,6 +254,15 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   users — review") plus total monthly spend. Supports keep/cut decisions directly.
   - **Migration required:** run `migrations/add-tool-costs.sql` in Supabase
     (creates a `tool_costs` table). Costs aren't editable until it exists.
+- **AI executive summary in the Word report.** The "↓ Report" download now opens
+  with a 3–4 sentence executive summary written by Claude (`claude-opus-4-8`) —
+  overall adoption, standout teams/tools, and who/what needs attention — generated
+  from the same aggregates the report already computes. The button shows
+  "Generating…" while it runs.
+  - **Requires** the `ANTHROPIC_API_KEY` env var in Render. Without it the report
+    still downloads, just without the summary paragraph (the rest is unchanged).
+  - Implemented as an admin-only `POST /api/report-summary` route so the API key
+    stays server-side; the client sends only aggregate stats, never raw data.
 
 ### Required environment variables (Render → Environment)
 
@@ -264,6 +273,7 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
 | `ADMIN_PASS` | Admin password — **required in production**, server won't boot without it |
 | `ADMIN_USER` | Admin username (optional, defaults to `elie`) |
 | `SESSION_SECRET` | Signs session cookies; keeps admin logins valid across redeploys |
+| `ANTHROPIC_API_KEY` | Optional — enables the AI executive summary in the audit report. Without it the report downloads without the summary |
 
 ### Still to do
 

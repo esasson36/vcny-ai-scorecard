@@ -5,6 +5,7 @@ import { submitBodySchema } from "@shared/schema";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import crypto from "node:crypto";
+import Anthropic from "@anthropic-ai/sdk";
 
 let ADMIN_USER = process.env.ADMIN_USER || "elie";
 let ADMIN_PASS = process.env.ADMIN_PASS || "";
@@ -170,6 +171,42 @@ export function registerRoutes(httpServer: Server, app: Express) {
   // ── Employees (admin only) ──────────────────────────────────────────
   app.get("/api/employees", requireAdmin, async (_req, res) => {
     res.json(await storage.getEmployees());
+  });
+
+  // ── AI executive summary (admin only) ────────────────────────────────
+  app.post("/api/report-summary", requireAdmin, async (req, res) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: "AI summary not configured. Set ANTHROPIC_API_KEY to enable it." });
+    }
+    const stats = req.body?.stats;
+    if (!stats || typeof stats !== "object") {
+      return res.status(400).json({ error: "stats required" });
+    }
+    try {
+      const client = new Anthropic({ apiKey });
+      const msg = await client.messages.create({
+        model: "claude-opus-4-8",
+        max_tokens: 600,
+        output_config: { effort: "low" },
+        system:
+          "You write the executive summary at the top of VCNY's monthly AI-tool adoption scorecard. " +
+          "VCNY is a home-textiles company; employees self-rate how they use ChatGPT, Claude, and Perplexity. " +
+          "Write 3-4 plain, confident sentences for a leadership audience: overall adoption and response rate, " +
+          "which teams or tools stand out (high or low), and who or what needs attention. " +
+          "No headings, no bullet points, no markdown, no preamble — just the paragraph. Refer to people by the data given.",
+        messages: [
+          { role: "user", content: "Here is this period's scorecard data as JSON:\n\n" + JSON.stringify(stats, null, 2) },
+        ],
+      });
+      const summary = msg.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join("").trim();
+      res.json({ summary });
+    } catch (e: any) {
+      const status = typeof e?.status === "number" ? e.status : 500;
+      res.status(status === 401 ? 503 : 502).json({
+        error: status === 401 ? "ANTHROPIC_API_KEY is invalid." : "Could not generate the AI summary right now.",
+      });
+    }
   });
 
   // ── Tool costs (admin only) ──────────────────────────────────────────
