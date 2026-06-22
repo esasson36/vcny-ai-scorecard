@@ -248,6 +248,12 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
 - **Tool adoption trend chart** on the dashboard (shown once there are 2+ months):
   a line chart of how many people used each of ChatGPT / Claude / Perplexity per
   month, for tracking adoption over time.
+- **Cost / ROI view** (new "Cost" admin tab). Enter each tool's monthly license
+  cost and see active users, cost-per-active-user, and average grade for the
+  latest month, with a status flag (Strong / Moderate / Low ROI, or "no active
+  users — review") plus total monthly spend. Supports keep/cut decisions directly.
+  - **Migration required:** run `migrations/add-tool-costs.sql` in Supabase
+    (creates a `tool_costs` table). Costs aren't editable until it exists.
 
 ### Required environment variables (Render → Environment)
 

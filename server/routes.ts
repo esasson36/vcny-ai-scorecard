@@ -172,6 +172,20 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json(await storage.getEmployees());
   });
 
+  // ── Tool costs (admin only) ──────────────────────────────────────────
+  app.get("/api/tool-costs", requireAdmin, async (_req, res) => {
+    res.json(await storage.getToolCosts());
+  });
+
+  app.post("/api/tool-costs", requireAdmin, async (req, res) => {
+    const { tool, monthlyCost } = req.body ?? {};
+    if (!tool || typeof monthlyCost !== "number" || monthlyCost < 0 || !isFinite(monthlyCost)) {
+      return res.status(400).json({ error: "tool and a non-negative monthlyCost are required" });
+    }
+    await storage.setToolCost(tool, monthlyCost);
+    res.json({ ok: true });
+  });
+
   // ── Headcounts (admin only) ──────────────────────────────────────────
   app.get("/api/headcounts", requireAdmin, async (_req, res) => {
     res.json(await storage.getHeadcounts());

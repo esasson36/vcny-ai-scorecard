@@ -57,6 +57,8 @@ export interface IStorage {
   setHeadcount(team: string, count: number): Promise<void>;
   getEmployees(): Promise<{ name: string; team: string }[]>;
   getDistinctTeams(): Promise<string[]>;
+  getToolCosts(): Promise<Record<string, number>>;
+  setToolCost(tool: string, monthlyCost: number): Promise<void>;
 }
 
 export const storage: IStorage = {
@@ -192,5 +194,20 @@ export const storage: IStorage = {
     const set = new Set<string>();
     ((data as { team: string }[]) ?? []).forEach(r => { if (r.team) set.add(r.team); });
     return [...set];
+  },
+
+  async getToolCosts(): Promise<Record<string, number>> {
+    const { data, error } = await supabase.from("tool_costs").select("*");
+    if (error) throw error;
+    const result: Record<string, number> = {};
+    ((data as { tool: string; monthly_cost: number }[]) ?? []).forEach(r => { result[r.tool] = Number(r.monthly_cost); });
+    return result;
+  },
+
+  async setToolCost(tool: string, monthlyCost: number): Promise<void> {
+    const { error } = await supabase
+      .from("tool_costs")
+      .upsert({ tool, monthly_cost: monthlyCost }, { onConflict: "tool" });
+    if (error) throw error;
   },
 };

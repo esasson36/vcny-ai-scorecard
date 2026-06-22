@@ -16,7 +16,7 @@ Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, L
 import { cn } from "@/lib/utils";
 
 interface Props { onLogout: () => void; }
-type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams" | "teamcompare" | "settings";
+type View = "dashboard" | "detail" | "person" | "compare" | "leaderboard" | "teams" | "teamcompare" | "cost" | "settings";
 
 function parseTools(s: string): Record<string, any> {
   try { return JSON.parse(s); } catch { return {}; }
@@ -102,6 +102,17 @@ export default function AdminPanel({ onLogout }: Props) {
 
   const { data: employees = [] } = useQuery<{ name: string; team: string }[]>({
     queryKey: ["/api/employees"],
+  });
+
+  const { data: toolCosts = {}, refetch: refetchCosts } = useQuery<Record<string, number>>({
+    queryKey: ["/api/tool-costs"],
+  });
+
+  const setToolCostMutation = useMutation({
+    mutationFn: async ({ tool, monthlyCost }: { tool: string; monthlyCost: number }) => {
+      await apiRequest("POST", "/api/tool-costs", { tool, monthlyCost });
+    },
+    onSuccess: () => refetchCosts(),
   });
 
   const setHeadcountMutation = useMutation({
@@ -394,6 +405,7 @@ ${missing.length > 0
     leaderboard: "Leaderboard",
     teams: "Teams",
     teamcompare: "Team vs Team",
+    cost: "Cost & ROI",
     settings: "Settings",
   };
 
@@ -436,16 +448,16 @@ ${missing.length > 0
         </div>
 
         {/* Nav tabs */}
-        {(["dashboard", "compare", "leaderboard", "teams", "teamcompare", "settings"] as View[]).includes(view) && (
+        {(["dashboard", "compare", "leaderboard", "teams", "teamcompare", "cost", "settings"] as View[]).includes(view) && (
           <div className="flex gap-1.5 mb-6 pb-1 overflow-x-auto flex-wrap">
-            {(["dashboard", "leaderboard", "teams", "compare", "teamcompare", "settings"] as const).map(v => (
+            {(["dashboard", "leaderboard", "teams", "compare", "teamcompare", "cost", "settings"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={cn("text-[11px] uppercase tracking-[0.1em] px-4 py-1.5 rounded-md transition-all duration-200 whitespace-nowrap",
                   view === v
                     ? "bg-foreground text-background font-semibold"
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 )} style={{ fontFamily: "'Geist Mono', monospace" }}>
-                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : v === "compare" ? "Compare" : v === "teamcompare" ? "Team vs Team" : "Settings"}
+                {v === "dashboard" ? "Submissions" : v === "leaderboard" ? "Leaderboard" : v === "teams" ? "Teams" : v === "compare" ? "Compare" : v === "teamcompare" ? "Team vs Team" : v === "cost" ? "Cost" : "Settings"}
               </button>
             ))}
           </div>
@@ -495,6 +507,12 @@ ${missing.length > 0
 
         {view === "teamcompare" && (
           <TeamCompareView allSubs={subs} allMonths={allMonths} />
+        )}
+
+        {view === "cost" && (
+          <CostView allSubs={subs} allMonths={allMonths} costs={toolCosts}
+            onSetCost={(tool, monthlyCost) => setToolCostMutation.mutate({ tool, monthlyCost })}
+            isSaving={setToolCostMutation.isPending} />
         )}
 
         {view === "settings" && (
@@ -1467,6 +1485,97 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>All time</h2>
         <RankTable rankings={allTimeRankings} label="all submissions" scopeSubs={allSubs} />
+      </div>
+    </div>
+  );
+}
+
+// ── Cost / ROI ────────────────────────────────────────────────────────────────
+// Enter each tool's monthly license cost; see cost-per-active-user vs avg grade
+// for the latest month, to support keep/cut decisions.
+function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
+  allSubs: Submission[]; allMonths: string[];
+  costs: Record<string, number>;
+  onSetCost: (tool: string, monthlyCost: number) => void;
+  isSaving: boolean;
+}) {
+  const latest = allMonths[0] ?? "";
+  const scope = latest ? allSubs.filter(s => getMonth(s) === latest) : allSubs;
+  const [vals, setVals] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const init: Record<string, string> = {};
+    TOOL_KEYS.forEach(t => { init[t] = costs[t] != null ? String(costs[t]) : ""; });
+    setVals(init);
+  }, [costs]);
+
+  const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  const rows = TOOL_KEYS.map(t => {
+    const users = new Set(scope.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
+    const pcts = scope.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
+    const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+    const grade = avg != null ? pctToGrade(avg) : null;
+    const cost = costs[t] ?? 0;
+    const perUser = users.size > 0 ? cost / users.size : null;
+    let status = { label: "Set a cost to see ROI", cls: "text-muted-foreground" };
+    if (cost > 0) {
+      if (users.size === 0) status = { label: "No active users — review", cls: "text-red-600 dark:text-red-400" };
+      else if (grade === "D" || grade === "F") status = { label: "Low ROI — review", cls: "text-red-600 dark:text-red-400" };
+      else if (grade === "A" || grade === "B") status = { label: "Strong ROI", cls: "text-emerald-600 dark:text-emerald-400" };
+      else status = { label: "Moderate ROI", cls: "text-amber-600 dark:text-amber-400" };
+    }
+    return { t, users: users.size, avg, grade, cost, perUser, status };
+  });
+  const totalSpend = TOOL_KEYS.reduce((s, t) => s + (costs[t] ?? 0), 0);
+
+  return (
+    <div>
+      <p className="text-sm text-muted-foreground mb-5">
+        Cost-per-user and grades reflect {latest ? <b>{fmtMonth(latest)}</b> : "all submissions"} — your most recent month of data.
+        Enter what VCNY pays per tool per month to see which licenses are pulling their weight.
+      </p>
+
+      <div className="space-y-3">
+        {rows.map(r => (
+          <div key={r.t} className="bg-card border border-border rounded-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className={cn("pill-" + r.t, "text-xs font-semibold px-3 py-1 rounded-full")}>{TOOLS[r.t]}</span>
+              <span className={cn("text-[11px] font-semibold uppercase tracking-wider", r.status.cls)} style={{ fontFamily: "'Geist Mono', monospace" }}>{r.status.label}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Monthly cost</label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-muted-foreground">$</span>
+                  <input type="number" min={0} step="0.01"
+                    value={vals[r.t] ?? ""}
+                    onChange={e => setVals(prev => ({ ...prev, [r.t]: e.target.value }))}
+                    className="w-24 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
+                  <button onClick={() => { const v = parseFloat(vals[r.t]); if (!isNaN(v) && v >= 0) onSetCost(r.t, v); }}
+                    disabled={isSaving}
+                    className="text-xs border border-border rounded-sm px-2.5 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">Save</button>
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Active users</div>
+                <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.users}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Cost / user</div>
+                <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.perUser != null ? money(r.perUser) : "—"}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Avg grade</div>
+                {r.grade ? <GradeBadge grade={r.grade} className="text-[22px] px-2.5 py-1" /> : <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>—</div>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between bg-secondary/40 border border-border rounded-sm px-4 py-3">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Total monthly spend</span>
+        <span className="text-lg font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>{money(totalSpend)}</span>
       </div>
     </div>
   );
