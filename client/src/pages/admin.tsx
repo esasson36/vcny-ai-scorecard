@@ -62,6 +62,26 @@ function getMonth(sub: Submission) {
   return sub.month || sub.timestamp.slice(0, 7);
 }
 
+// Does month `a` ("YYYY-MM") immediately precede month `b`?
+function isConsecutiveMonth(a: string, b: string): boolean {
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  return (by * 12 + bm) - (ay * 12 + am) === 1;
+}
+
+// Consecutive months a person submitted, counting back from their latest submission.
+// e.g. submitted Apr, May, Jun → 3; missed May → streak breaks.
+function computeStreak(name: string, allSubs: Submission[]): number {
+  const months = [...new Set(allSubs.filter(s => s.name === name).map(getMonth))].filter(Boolean).sort();
+  if (!months.length) return 0;
+  let streak = 1;
+  for (let i = months.length - 1; i > 0; i--) {
+    if (isConsecutiveMonth(months[i - 1], months[i])) streak++;
+    else break;
+  }
+  return streak;
+}
+
 export default function AdminPanel({ onLogout }: Props) {
   const [view, setView] = useState<View>("dashboard");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -572,6 +592,48 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
       {/* Response rate */}
       <ResponseRate subs={subs} allSubs={allSubs} />
 
+      {/* Adoption trend — how many people use each tool over time */}
+      {allMonths.length >= 2 && <AdoptionTrend allSubs={allSubs} allMonths={allMonths} />}
+
+      {/* Needs attention — low grades or sharp drops this period */}
+      {(() => {
+        const flagged = subs.filter(hasGradedTools).map(sub => {
+          const pct = subOverallPct(sub);
+          const g = pctToGrade(pct);
+          const prev = allSubs
+            .filter(s => s.name === sub.name && getMonth(s) < getMonth(sub) && hasGradedTools(s))
+            .sort((a, b) => getMonth(b).localeCompare(getMonth(a)))[0];
+          const delta = prev ? pct - subOverallPct(prev) : null;
+          const reasons: string[] = [];
+          if (g === "D" || g === "F") reasons.push(`Low grade (${g})`);
+          if (delta !== null && delta <= -10) reasons.push(`Dropped ${delta}%`);
+          return { sub, g, reasons };
+        }).filter(x => x.reasons.length > 0)
+          .sort((a, b) => subOverallPct(a.sub) - subOverallPct(b.sub));
+        if (flagged.length === 0) return null;
+        return (
+          <div className="mb-6">
+            <h2 className="text-xs font-semibold text-amber-700 dark:text-amber-500 uppercase tracking-wider mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>
+              ⚠ Needs attention{selectedMonth !== "all" ? ` · ${fmtMonth(selectedMonth)}` : ""}
+            </h2>
+            <div className="bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700/40 rounded-sm divide-y divide-amber-200/60 dark:divide-amber-700/30">
+              {flagged.map(({ sub, g, reasons }) => (
+                <div key={sub.id} onClick={() => onOpen(sub.id)} className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-amber-100/40 dark:hover:bg-amber-900/20 transition-colors">
+                  <div>
+                    <span className="font-semibold text-sm">{sub.name}</span>
+                    <span className="text-xs text-muted-foreground ml-2">{sub.team}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-amber-700 dark:text-amber-500">{reasons.join(" · ")}</span>
+                    <GradeBadge grade={g} className="text-base px-2 py-0.5" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Submissions list */}
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider" style={{ fontFamily: "'Geist Mono', monospace" }}>Submissions</h2>
@@ -604,6 +666,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
               .sort((a, b) => getMonth(b).localeCompare(getMonth(a)))[0];
             const delta = graded && prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
             const overallG = pctToGrade(subOverallPct(sub));
+            const streak = computeStreak(sub.name, allSubs);
             return (
               <div key={sub.id} onClick={() => onOpen(sub.id)}
                 className="card-lift animate-fade-up bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 cursor-pointer"
@@ -612,6 +675,11 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-[15px]">{sub.name}</span>
+                      {streak >= 2 && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400" title={`${streak} months in a row`}>
+                          🔥 {streak}
+                        </span>
+                      )}
                       {delta !== null && (
                         <span className={cn("text-[10px] font-mono px-1.5 py-0.5 rounded",
                           delta > 0 ? "text-green-500 bg-green-500/10" :
@@ -1328,7 +1396,12 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
                     : <span className="text-sm text-muted-foreground font-mono">{i + 1}</span>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate">{p.name}</div>
+                  <div className="font-semibold text-sm truncate flex items-center gap-1.5">
+                    {p.name}
+                    {computeStreak(p.name, allSubs) >= 2 && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0" title={`${computeStreak(p.name, allSubs)} months in a row`}>🔥 {computeStreak(p.name, allSubs)}</span>
+                    )}
+                  </div>
                   <div className="text-xs text-muted-foreground">{p.team}</div>
                 </div>
                 <div className="w-24 hidden sm:block">
@@ -1395,6 +1468,39 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>All time</h2>
         <RankTable rankings={allTimeRankings} label="all submissions" scopeSubs={allSubs} />
       </div>
+    </div>
+  );
+}
+
+// ── Adoption trend ────────────────────────────────────────────────────────────
+// How many distinct submissions used each tool, per month — adoption breadth.
+function AdoptionTrend({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: string[] }) {
+  const months = [...allMonths].sort(); // oldest → newest
+  const TOOL_LINE: Record<string, string> = { cgt: "#10a37f", cla: "#d97757", per: "#20808d" };
+  const data = {
+    labels: months.map(fmtMonth),
+    datasets: TOOL_KEYS.map(t => ({
+      label: TOOLS[t],
+      data: months.map(m => allSubs.filter(s => getMonth(s) === m && parseTools(s.tools)[t]).length),
+      borderColor: TOOL_LINE[t],
+      backgroundColor: TOOL_LINE[t],
+      tension: 0.3,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+    })),
+  };
+  const options = {
+    responsive: true,
+    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    plugins: {
+      legend: { position: "bottom" as const },
+      tooltip: { callbacks: { label: (ctx: any) => `${ctx.dataset.label}: ${ctx.parsed.y} ${ctx.parsed.y === 1 ? "person" : "people"}` } },
+    },
+  };
+  return (
+    <div className="bg-card border border-border rounded-sm p-5 mb-6">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4" style={{ fontFamily: "'Geist Mono', monospace" }}>Tool adoption over time · # of people</p>
+      <Line data={data} options={options} />
     </div>
   );
 }

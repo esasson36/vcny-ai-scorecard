@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   DEFAULT ''`). Until the column exists, submissions that include feedback will
   fail to save.
 
-### Same day — leaderboard & team-name polish
+## 2026-06-22 — Leaderboard polish, team-name fix & insight features
 
 - **`2bfdaf4` → `2cce83a`** — **Clickable leaderboard rows.** Clicking anywhere on
   a person's row (This month, All time, or Most improved) now opens their most
@@ -238,6 +238,16 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   case-insensitively, it snaps to that canonical casing (standard teams take
   priority, so free-text "hr" becomes "HR"). Existing rows are untouched and
   admin edits remain authoritative.
+- **Submission streaks.** A 🔥 badge shows how many consecutive months a person
+  has submitted (e.g. "🔥 3"), on both the dashboard submission cards and the
+  leaderboard. A missed month resets the streak.
+- **"Needs attention" section** on the dashboard automatically flags people who
+  scored a D/F this period or dropped 10%+ from their previous submission, with
+  the reason and a click-through to their submission — so coaching candidates
+  surface without hunting.
+- **Tool adoption trend chart** on the dashboard (shown once there are 2+ months):
+  a line chart of how many people used each of ChatGPT / Claude / Perplexity per
+  month, for tracking adoption over time.
 
 ### Required environment variables (Render → Environment)
 
