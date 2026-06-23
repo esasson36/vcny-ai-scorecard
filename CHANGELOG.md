@@ -252,6 +252,9 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   an "Avg ChatGPT / Claude / Perplexity" KPI card filters the submissions list to
   just the people who used that tool; the active filter shows as a removable chip
   next to the "Submissions" heading. Click the card again or the chip to clear.
+- **Team vs Team remembers your picks.** The two team selections now persist when
+  you switch to another tab and back (state lifted to the panel, like the
+  month-comparison picks), instead of resetting to the first two teams.
 - **Cost / ROI view** (new "Cost" admin tab). Enter each tool's **per-user
   (per-seat) cost** and see active users, computed monthly spend (cost × active
   users), and average grade for the latest month, with a status flag (Strong /

@@ -89,6 +89,8 @@ export default function AdminPanel({ onLogout }: Props) {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [compareA, setCompareA] = useState<string>("");
   const [compareB, setCompareB] = useState<string>("");
+  const [teamCompareA, setTeamCompareA] = useState<string>("");
+  const [teamCompareB, setTeamCompareB] = useState<string>("");
   const [reportBusy, setReportBusy] = useState(false);
   const qc = useQueryClient();
 
@@ -544,7 +546,9 @@ ${missing.length > 0
         )}
 
         {view === "teamcompare" && (
-          <TeamCompareView allSubs={subs} allMonths={allMonths} />
+          <TeamCompareView allSubs={subs} allMonths={allMonths}
+            teamA={teamCompareA} teamB={teamCompareB}
+            onChangeA={setTeamCompareA} onChangeB={setTeamCompareB} />
         )}
 
         {view === "cost" && (
@@ -2003,16 +2007,20 @@ function TrendChart({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: 
 }
 
 // ── Team vs Team Comparison ───────────────────────────────────────────────────
-function TeamCompareView({ allSubs, allMonths }: { allSubs: Submission[]; allMonths: string[] }) {
+function TeamCompareView({ allSubs, allMonths, teamA, teamB, onChangeA, onChangeB }: {
+  allSubs: Submission[]; allMonths: string[];
+  teamA: string; teamB: string;
+  onChangeA: (t: string) => void; onChangeB: (t: string) => void;
+}) {
   const allTeams = useMemo(() => [...new Set(allSubs.map(s => s.team))].sort(), [allSubs]);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
-  const [teamA, setTeamA] = useState(() => allTeams[0] ?? "");
-  const [teamB, setTeamB] = useState(() => allTeams[1] ?? "");
+  const setTeamA = onChangeA;
+  const setTeamB = onChangeB;
 
-  // Keep team selectors valid as data loads
+  // Keep team selectors valid as data loads / persisted picks vanish
   useEffect(() => {
-    if (!teamA && allTeams[0]) setTeamA(allTeams[0]);
-    if (!teamB && allTeams[1]) setTeamB(allTeams[1]);
+    if (!teamA && allTeams[0]) onChangeA(allTeams[0]);
+    if (!teamB && allTeams[1]) onChangeB(allTeams[1]);
   }, [allTeams]);
 
   const filteredSubs = selectedMonth === "all" ? allSubs : allSubs.filter(s => getMonth(s) === selectedMonth);
