@@ -248,6 +248,10 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
 - **Tool adoption trend chart** on the dashboard (shown once there are 2+ months):
   a line chart of how many people used each of ChatGPT / Claude / Perplexity per
   month, for tracking adoption over time.
+- **Click a tool average to filter submissions.** On the Submissions tab, clicking
+  an "Avg ChatGPT / Claude / Perplexity" KPI card filters the submissions list to
+  just the people who used that tool; the active filter shows as a removable chip
+  next to the "Submissions" heading. Click the card again or the chip to clear.
 - **Cost / ROI view** (new "Cost" admin tab). Enter each tool's **per-user
   (per-seat) cost** and see active users, computed monthly spend (cost × active
   users), and average grade for the latest month, with a status flag (Strong /

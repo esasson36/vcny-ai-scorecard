@@ -587,6 +587,9 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
   onSetHeadcount: (team: string, count: number) => void;
   employees: { name: string; team: string }[];
 }) {
+  const [toolFilter, setToolFilter] = useState<ToolKey | null>(null);
+  const shownSubs = toolFilter ? subs.filter(s => parseTools(s.tools)[toolFilter]) : subs;
+
   function avgGradeForMonth(m: string) {
     const msubs = m === "all" ? allSubs : allSubs.filter(s => getMonth(s) === m);
     const pcts: number[] = [];
@@ -627,22 +630,35 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
         </div>
       </div>
 
-      {/* KPI row */}
+      {/* KPI row — click a tool average to filter the submissions list to that tool */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        {[
-          { label: "Submissions", value: String(subs.length) },
-          { label: "Avg ChatGPT", value: toolAvgGrade("cgt"), isGrade: true },
-          { label: "Avg Claude", value: toolAvgGrade("cla"), isGrade: true },
-          { label: "Avg Perplexity", value: toolAvgGrade("per"), isGrade: true },
-        ].map(k => (
-          <div key={k.label} className="kpi-card bg-card border border-border rounded-sm p-3.5">
-            <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">{k.label}</div>
-            {k.isGrade && k.value !== "—"
-              ? <GradeBadge grade={k.value} className="text-[26px] px-2.5 py-1 mt-0.5" />
-              : <div className="text-[26px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{k.value}</div>
-            }
-          </div>
-        ))}
+        {([
+          { label: "Submissions", value: String(subs.length), tool: null as ToolKey | null },
+          { label: "Avg ChatGPT", value: toolAvgGrade("cgt"), isGrade: true, tool: "cgt" as ToolKey },
+          { label: "Avg Claude", value: toolAvgGrade("cla"), isGrade: true, tool: "cla" as ToolKey },
+          { label: "Avg Perplexity", value: toolAvgGrade("per"), isGrade: true, tool: "per" as ToolKey },
+        ]).map(k => {
+          const clickable = k.tool !== null;
+          const active = clickable && toolFilter === k.tool;
+          return (
+            <div key={k.label}
+              onClick={clickable ? () => setToolFilter(active ? null : k.tool) : undefined}
+              className={cn(
+                "kpi-card bg-card border rounded-sm p-3.5",
+                clickable && "cursor-pointer",
+                active ? "border-foreground ring-1 ring-foreground" : "border-border"
+              )}
+              title={clickable ? `Show only submissions that used ${TOOLS[k.tool!]}` : undefined}>
+              <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1 flex items-center gap-1">
+                {k.label}{active && <span className="text-foreground">›</span>}
+              </div>
+              {k.isGrade && k.value !== "—"
+                ? <GradeBadge grade={k.value} className="text-[26px] px-2.5 py-1 mt-0.5" />
+                : <div className="text-[26px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{k.value}</div>
+              }
+            </div>
+          );
+        })}
       </div>
 
       {/* Response rate */}
@@ -692,7 +708,15 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
 
       {/* Submissions list */}
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider" style={{ fontFamily: "'Geist Mono', monospace" }}>Submissions</h2>
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2" style={{ fontFamily: "'Geist Mono', monospace" }}>
+          Submissions
+          {toolFilter && (
+            <button onClick={() => setToolFilter(null)}
+              className="normal-case tracking-normal text-[11px] font-medium px-2 py-0.5 rounded-full bg-foreground text-background hover:opacity-85 transition-opacity flex items-center gap-1">
+              {TOOLS[toolFilter]} ✕
+            </button>
+          )}
+        </h2>
         {allSubs.length > 0 && (
           <button data-testid="button-clear-all" onClick={onClearAll} disabled={isClearingAll}
             className="text-[11px] uppercase tracking-[0.08em] border border-red-200 text-red-600 rounded-sm px-3 py-1 hover:border-red-400 hover:bg-red-50 transition-colors disabled:opacity-40"
@@ -702,16 +726,17 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
         )}
       </div>
 
-      {subs.length === 0 ? (
+      {shownSubs.length === 0 ? (
         <div className="bg-card border border-border rounded-sm p-10 text-center">
           <Inbox className="w-8 h-8 mx-auto text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground">
-            {allSubs.length === 0 ? "No submissions yet. Share the form URL with your team." : "No submissions for this month."}
+            {toolFilter ? `No submissions used ${TOOLS[toolFilter]}${selectedMonth !== "all" ? ` in ${fmtMonth(selectedMonth)}` : ""}.`
+              : allSubs.length === 0 ? "No submissions yet. Share the form URL with your team." : "No submissions for this month."}
           </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {subs.map((sub, i) => {
+          {shownSubs.map((sub, i) => {
             const tools = parseTools(sub.tools);
             const graded = Object.keys(tools).length > 0;
             const fb = parseFeedback(sub);
