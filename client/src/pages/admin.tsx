@@ -11,6 +11,10 @@ import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-rea
 import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Legend as RechartsLegend } from "recharts";
+import * as XLSX from "xlsx";
+
+// Midpoint hours saved per week for each time-saved score level (0–5)
+const TIME_HOURS = [0, 0.5, 2, 4, 7.5, 12];
 import { getCoachSuggestions } from "@/lib/scorecard";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -93,6 +97,7 @@ export default function AdminPanel({ onLogout }: Props) {
   const [teamCompareA, setTeamCompareA] = useState<string>("");
   const [teamCompareB, setTeamCompareB] = useState<string>("");
   const [reportBusy, setReportBusy] = useState(false);
+  const [hourlyRate, setHourlyRate] = useState(25);
   const qc = useQueryClient();
 
   const { data: subs = [], isFetching, refetch } = useQuery<Submission[]>({
@@ -188,36 +193,126 @@ export default function AdminPanel({ onLogout }: Props) {
     [subs, activePerson]
   );
 
-  function exportCSV() {
-    const TOOLS_MAP: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
-    const rows: string[][] = [["Month", "Name", "Team", "Date", "Tool",
-      "Frequency", "Time Saved", "Impact", "Adoption",
-      "Score", "Max", "Percent", "Grade", "Recommendation", "Use Cases", "Challenges"]];
+  function exportExcel() {
+    const TM: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
+    const wb = XLSX.utils.book_new();
+    const suffix = selectedMonth === "all" ? "all" : selectedMonth;
+
+    // ── Sheet 1: Submissions ─────────────────────────────────────────────────
+    const subRows: (string | number)[][] = [["Month", "Name", "Team", "Date", "Tool",
+      "Frequency", "Time Saved", "Impact", "Adoption", "Score", "%", "Grade", "Recommendation",
+      "Use Cases", "Challenges"]];
     filteredSubs.forEach(sub => {
       const tools = parseTools(sub.tools);
       Object.keys(tools).forEach(t => {
         const ts = tools[t];
         const sc = calcScore(ts);
         const g = pctToGrade(sc.pct);
-        rows.push([fmtMonth(getMonth(sub)), sub.name, sub.team,
-          new Date(sub.timestamp).toLocaleDateString(),
-          TOOLS_MAP[t] ?? t,
+        subRows.push([fmtMonth(getMonth(sub)), sub.name, sub.team,
+          new Date(sub.timestamp).toLocaleDateString(), TM[t] ?? t,
           LABELS.freq[ts.freq], LABELS.time[ts.time], LABELS.impact[ts.impact], LABELS.adopt[ts.adopt],
-          String(sc.total), String(sc.max), sc.pct + "%", g, gradeAction(g),
-          sub.useCases ?? "", sub.challenges ?? ""]);
+          sc.total, sc.pct, g, gradeAction(g), sub.useCases ?? "", sub.challenges ?? ""]);
       });
     });
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    // Prepend a UTF-8 BOM so Excel reads the file as UTF-8 instead of
-    // Windows-1252 — otherwise dashes like "1–3 hrs" show up as mojibake.
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const suffix = selectedMonth === "all" ? "all" : selectedMonth;
-    a.download = `vcny-ai-scorecard-${suffix}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(subRows), "Submissions");
+
+    // ── Sheet 2: Leaderboard ─────────────────────────────────────────────────
+    const lbMap = new Map<string, { name: string; team: string; pcts: number[]; months: Set<string> }>();
+    filteredSubs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      const pcts = Object.keys(tools).map(t => calcScore(tools[t]).pct);
+      if (!pcts.length) return;
+      const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+      const ex = lbMap.get(sub.name);
+      if (ex) { ex.pcts.push(avg); ex.months.add(getMonth(sub)); }
+      else { lbMap.set(sub.name, { name: sub.name, team: sub.team, pcts: [avg], months: new Set([getMonth(sub)]) }); }
+    });
+    const lbRankings = [...lbMap.values()]
+      .map(p => ({ ...p, avg: Math.round(p.pcts.reduce((a, b) => a + b, 0) / p.pcts.length) }))
+      .sort((a, b) => b.avg - a.avg);
+    const lbRows: (string | number)[][] = [["Rank", "Name", "Team", "Months", "Avg Score %", "Grade", "Streak"]];
+    lbRankings.forEach((p, i) => {
+      lbRows.push([i + 1, p.name, p.team, p.months.size, p.avg, pctToGrade(p.avg), computeStreak(p.name, subs)]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lbRows), "Leaderboard");
+
+    // ── Sheet 3: Teams ───────────────────────────────────────────────────────
+    const teamsMap = new Map<string, { pcts: number[]; toolPcts: Record<string, number[]>; count: number }>();
+    filteredSubs.forEach(sub => {
+      if (!teamsMap.has(sub.team)) teamsMap.set(sub.team, { pcts: [], toolPcts: {}, count: 0 });
+      const td = teamsMap.get(sub.team)!;
+      td.count++;
+      const tools = parseTools(sub.tools);
+      Object.keys(tools).forEach(t => {
+        const p = calcScore(tools[t]).pct;
+        td.pcts.push(p);
+        if (!td.toolPcts[t]) td.toolPcts[t] = [];
+        td.toolPcts[t].push(p);
+      });
+    });
+    const teamRows: (string | number)[][] = [["Team", "Submissions", "Avg Score %", "Grade", "ChatGPT Grade", "Claude Grade", "Perplexity Grade"]];
+    [...teamsMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([team, td]) => {
+      const avg = td.pcts.length ? Math.round(td.pcts.reduce((a, b) => a + b, 0) / td.pcts.length) : 0;
+      teamRows.push([team, td.count, avg, pctToGrade(avg),
+        td.toolPcts.cgt?.length ? pctToGrade(Math.round(td.toolPcts.cgt.reduce((a, b) => a + b, 0) / td.toolPcts.cgt.length)) : "—",
+        td.toolPcts.cla?.length ? pctToGrade(Math.round(td.toolPcts.cla.reduce((a, b) => a + b, 0) / td.toolPcts.cla.length)) : "—",
+        td.toolPcts.per?.length ? pctToGrade(Math.round(td.toolPcts.per.reduce((a, b) => a + b, 0) / td.toolPcts.per.length)) : "—",
+      ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(teamRows), "Teams");
+
+    // ── Sheet 4: Cost & ROI ──────────────────────────────────────────────────
+    const costLatest = allMonths[0] ?? "";
+    const costScope = costLatest ? subs.filter(s => getMonth(s) === costLatest) : subs;
+    const costRows: (string | number)[][] = [["Tool", "Active Users", "Cost/User/Mo", "Monthly Spend",
+      "Yearly Spend", "Avg Grade", "Est. Value Saved/Mo", "ROI Multiple", "Est. Hrs Saved/Mo"]];
+    TOOL_KEYS.forEach(t => {
+      const users = new Set(costScope.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
+      const pcts = costScope.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
+      const timeScores = costScope.filter(s => parseTools(s.tools)[t]).map(s => (parseTools(s.tools)[t].time ?? 0) as number);
+      const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+      const perUser = toolCosts[t] ?? 0;
+      const monthlySpend = perUser * users.size;
+      const avgT = timeScores.length ? timeScores.reduce((a, b) => a + b, 0) / timeScores.length : 0;
+      const hrsPerWeek = TIME_HOURS[Math.round(avgT)] ?? 0;
+      const monthlyValue = hrsPerWeek * 4.33 * hourlyRate * users.size;
+      const roi = monthlySpend > 0 && monthlyValue > 0 ? Math.round(monthlyValue / monthlySpend * 10) / 10 : null;
+      costRows.push([TM[t] ?? t, users.size, perUser > 0 ? perUser : "Not set",
+        perUser > 0 ? monthlySpend : "—", perUser > 0 ? monthlySpend * 12 : "—",
+        avg != null ? pctToGrade(avg) : "—",
+        monthlyValue > 0 ? Math.round(monthlyValue) : "—",
+        roi ?? "—",
+        monthlyValue > 0 ? Math.round(monthlyValue / hourlyRate) : "—"]);
+    });
+    const totalSpend = TOOL_KEYS.reduce((s, t) => s + (toolCosts[t] ?? 0) * new Set(costScope.filter(sub => parseTools(sub.tools)[t]).map(sub => sub.name.toLowerCase())).size, 0);
+    costRows.push(["", "", "", "", "", "", "", "", ""]);
+    costRows.push(["Total", "", "", totalSpend, totalSpend * 12, "", "", "", ""]);
+    costRows.push([`Hourly rate used: $${hourlyRate}/hr`, "", "", "", "", "", "", "", ""]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(costRows), "Cost & ROI");
+
+    // ── Sheet 5: Product Feedback ─────────────────────────────────────────────
+    const fbRows: (string | number)[][] = [["Name", "Team", "Month", "Tool",
+      "Current Rating", "Potential Rating", "Comments/Questions",
+      "Rating", "Time Saved", "Will Keep Using", "Recommend For"]];
+    filteredSubs.forEach(sub => {
+      const fb = parseFeedback(sub);
+      FEEDBACK_KEYS.forEach(k => {
+        if (!fb[k]) return;
+        const d = fb[k];
+        fbRows.push([sub.name, sub.team, fmtMonth(getMonth(sub)), FEEDBACK_TOOLS[k],
+          k === "manifast" ? d.current : "—",
+          k === "manifast" ? d.potential : "—",
+          k === "manifast" ? (d.questions ?? "") : "—",
+          k === "plaude" ? d.rating : "—",
+          k === "plaude" ? (LABELS.time[d.timeSaved] ?? "—") : "—",
+          k === "plaude" ? (d.continue ?? "—") : "—",
+          k === "plaude" ? (d.recommendFor ?? "") : "—",
+        ]);
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fbRows), "Product Feedback");
+
+    XLSX.writeFile(wb, `vcny-ai-scorecard-${suffix}.xlsx`);
   }
 
   async function exportReport() {
@@ -421,6 +516,95 @@ ${missing.length > 0
   ? `<p style="font-size:10pt">${missing.map(e=>`<span style="color:#cc2222">${esc(e.name)}</span>${e.team ? ` <span style="color:#aaaaaa">(${esc(e.team)})</span>` : ""}`).join(" &nbsp;&middot;&nbsp; ")}</p>`
   : `<p style="color:#16a34a;font-size:10pt">All employees have submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
 
+${(() => {
+  const best = rosterSorted.filter(r => ["A","B"].includes(r.overallGrade));
+  if (!best.length) return "";
+  return `${sectionHead("Best Performers")}
+<table style="margin-bottom:14pt">
+  <thead><tr>
+    <th style="width:20%">Name</th><th style="width:16%">Team</th><th style="width:32%">Tools</th><th style="width:10%">Grade</th><th>Recommendation</th>
+  </tr></thead>
+  <tbody>
+    ${best.map(r=>`<tr>
+      <td style="font-weight:bold">${esc(r.sub.name)}</td>
+      <td style="color:#666666">${esc(r.sub.team)}</td>
+      <td style="font-size:9pt;color:#555555">${r.toolRows.map(t=>`${esc(t.name)} ${badge(t.grade,9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
+      <td>${badge(r.overallGrade,12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
+      <td style="font-size:9pt;color:#555555">${esc(gradeAction(r.overallGrade))}</td>
+    </tr>`).join("")}
+  </tbody>
+</table>`;
+})()}
+
+${(() => {
+  const poor = rosterSorted.filter(r => ["D","F"].includes(r.overallGrade));
+  if (!poor.length) return "";
+  return `${sectionHead("Needs Improvement")}
+<table style="margin-bottom:14pt">
+  <thead><tr>
+    <th style="width:20%">Name</th><th style="width:16%">Team</th><th style="width:32%">Tools</th><th style="width:10%">Grade</th><th>Action</th>
+  </tr></thead>
+  <tbody>
+    ${poor.map(r=>`<tr>
+      <td style="font-weight:bold">${esc(r.sub.name)}</td>
+      <td style="color:#666666">${esc(r.sub.team)}</td>
+      <td style="font-size:9pt;color:#555555">${r.toolRows.map(t=>`${esc(t.name)} ${badge(t.grade,9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
+      <td>${badge(r.overallGrade,12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
+      <td style="font-size:9pt;color:#cc3300">${esc(gradeAction(r.overallGrade))}</td>
+    </tr>`).join("")}
+  </tbody>
+</table>`;
+})()}
+
+${(() => {
+  const hasCosts = Object.values(toolCosts).some(v => v > 0);
+  if (!hasCosts) return "";
+  const latestM = allMonths[0] ?? "";
+  const cs = latestM ? subs.filter(s => getMonth(s) === latestM) : subs;
+  const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const cRows = TOOL_KEYS.map(t => {
+    const tm: Record<string,string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
+    const users = new Set(cs.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
+    const pcts = cs.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
+    const timeScores = cs.filter(s => parseTools(s.tools)[t]).map(s => (parseTools(s.tools)[t].time ?? 0) as number);
+    const avg = pcts.length ? Math.round(pcts.reduce((a,b)=>a+b,0)/pcts.length) : null;
+    const grade = avg != null ? pctToGrade(avg) : null;
+    const perUser = toolCosts[t] ?? 0;
+    if (!perUser) return null;
+    const monthlySpend = perUser * users.size;
+    const avgT = timeScores.length ? timeScores.reduce((a,b)=>a+b,0)/timeScores.length : 0;
+    const hrsWk = TIME_HOURS[Math.round(avgT)] ?? 0;
+    const monthlyValue = hrsWk * 4.33 * hourlyRate * users.size;
+    const roi = monthlySpend > 0 && monthlyValue > 0 ? Math.round(monthlyValue/monthlySpend*10)/10 : null;
+    return { name: tm[t]??t, users: users.size, grade, perUser, monthlySpend, monthlyValue, roi };
+  }).filter(Boolean) as { name:string;users:number;grade:string|null;perUser:number;monthlySpend:number;monthlyValue:number;roi:number|null }[];
+  if (!cRows.length) return "";
+  const total = cRows.reduce((s,r)=>s+r.monthlySpend,0);
+  return `${sectionHead("Cost &amp; ROI &middot; " + esc(latestM ? fmtMonth(latestM) : "Latest Month"))}
+<p style="font-size:9pt;color:#888888;margin-bottom:8pt">Based on $${hourlyRate}/hr avg hourly rate · estimated value of time saved</p>
+<table style="margin-bottom:14pt">
+  <thead><tr>
+    <th>Tool</th><th>Active Users</th><th>Cost/User</th><th>Monthly Spend</th><th>Avg Grade</th><th>Est. Value Saved</th><th>ROI</th>
+  </tr></thead>
+  <tbody>
+    ${cRows.map(r=>`<tr>
+      <td style="font-weight:bold">${esc(r.name)}</td>
+      <td style="text-align:center">${r.users}</td>
+      <td>${money(r.perUser)}</td>
+      <td>${money(r.monthlySpend)}</td>
+      <td style="text-align:center">${r.grade ? badge(r.grade,10) : "—"}</td>
+      <td>${r.monthlyValue>0?money(r.monthlyValue):"—"}</td>
+      <td style="font-weight:bold;color:${r.roi&&r.roi>=1?"#16a34a":"#dc2626"}">${r.roi?r.roi.toFixed(1)+"×":"—"}</td>
+    </tr>`).join("")}
+    <tr style="background:#f5f5f5;border-top:1pt solid #cccccc">
+      <td colspan="3" style="font-weight:bold">Total monthly</td>
+      <td style="font-weight:bold">${money(total)}</td>
+      <td colspan="3" style="color:#888888;font-size:9pt">${money(total*12)}/yr projected</td>
+    </tr>
+  </tbody>
+</table>`;
+})()}
+
 <p style="margin-top:36pt;padding-top:8pt;border-top:1pt solid #dddddd;font-size:8pt;color:#aaaaaa;text-align:center">VCNY AI Scorecard &nbsp;&middot;&nbsp; ${esc(monthLabel)} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
 </body>
 </html>`;
@@ -474,11 +658,11 @@ ${missing.length > 0
               title={`Download audit report for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)} (includes an AI-written executive summary)`}>
               {reportBusy ? "Generating…" : `↓ Report · ${selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}`}
             </button>
-            <button onClick={exportCSV} disabled={filteredSubs.length === 0}
+            <button onClick={exportExcel} disabled={filteredSubs.length === 0}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-40"
               style={{ fontFamily: "'Geist Mono', monospace" }}
-              title={`Export ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
-              ↓ CSV · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
+              title={`Export Excel workbook (5 sheets) for ${selectedMonth === "all" ? "all submissions" : fmtMonth(selectedMonth)}`}>
+              ↓ Excel · {selectedMonth === "all" ? "All" : fmtMonth(selectedMonth)}
             </button>
             <button data-testid="button-logout" onClick={() => logoutMutation.mutate()}
               className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors flex items-center gap-1.5"
@@ -555,7 +739,8 @@ ${missing.length > 0
         {view === "cost" && (
           <CostView allSubs={subs} allMonths={allMonths} costs={toolCosts}
             onSetCost={(tool, monthlyCost) => setToolCostMutation.mutate({ tool, monthlyCost })}
-            isSaving={setToolCostMutation.isPending} />
+            isSaving={setToolCostMutation.isPending}
+            hourlyRate={hourlyRate} onHourlyRateChange={setHourlyRate} />
         )}
 
         {view === "settings" && (
@@ -1642,11 +1827,13 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
 // ── Cost / ROI ────────────────────────────────────────────────────────────────
 // Enter each tool's monthly license cost; see cost-per-active-user vs avg grade
 // for the latest month, to support keep/cut decisions.
-function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
+function CostView({ allSubs, allMonths, costs, onSetCost, isSaving, hourlyRate, onHourlyRateChange }: {
   allSubs: Submission[]; allMonths: string[];
   costs: Record<string, number>;
   onSetCost: (tool: string, monthlyCost: number) => void;
   isSaving: boolean;
+  hourlyRate: number;
+  onHourlyRateChange: (v: number) => void;
 }) {
   const latest = allMonths[0] ?? "";
   const scope = latest ? allSubs.filter(s => getMonth(s) === latest) : allSubs;
@@ -1657,10 +1844,7 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
     setVals(init);
   }, [costs]);
 
-  const [hourlyRate, setHourlyRate] = useState(25);
   const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  // Midpoint hours per week for each time-saved score (0–5)
-  const TIME_HOURS = [0, 0.5, 2, 4, 7.5, 12];
 
   const rows = TOOL_KEYS.map(t => {
     const users = new Set(scope.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
@@ -1700,7 +1884,7 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
         <div className="flex items-center gap-1.5">
           <span className="text-sm text-muted-foreground">$</span>
           <input type="number" min={1} step={1} value={hourlyRate}
-            onChange={e => setHourlyRate(Math.max(1, Number(e.target.value) || 25))}
+            onChange={e => onHourlyRateChange(Math.max(1, Number(e.target.value) || 25))}
             className="w-20 px-2 py-1 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
           <span className="text-xs text-muted-foreground">/hr</span>
         </div>
