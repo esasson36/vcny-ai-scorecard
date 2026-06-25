@@ -277,6 +277,9 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
 - **Teams view is now ordered by submission count** (most submissions first, with
   an alphabetical tiebreak) instead of alphabetically — so the most active teams
   surface at the top.
+- **Word report now uses a proper page section** (`@page Section1` + a wrapping
+  `div.Section1`) so Word applies even 1-inch margins on all sides. Previously the
+  body margin was ignored by Word and the content sat off-center.
 
 ### Slimmed the Word report
 

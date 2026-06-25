@@ -408,6 +408,8 @@ export default function AdminPanel({ onLogout }: Props) {
 <title>VCNY AI Scorecard — Audit Report</title>
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
+  @page Section1 { size: 8.5in 11.0in; margin: 1.0in 1.0in 1.0in 1.0in; }
+  div.Section1 { page: Section1; }
   body { font-family: Arial, sans-serif; font-size: 11pt; color: #111111; margin: 0; line-height: 1.4; }
   p { margin: 0 0 4pt; }
   table { border-collapse: collapse; width: 100%; }
@@ -416,7 +418,8 @@ export default function AdminPanel({ onLogout }: Props) {
   td { border-bottom: 1pt solid #eeeeee; }
 </style>
 </head>
-<body style="margin:1in 1in 1in 1in">
+<body>
+<div class="Section1">
 
 <p style="font-size:8pt;color:#888888;font-family:Arial,sans-serif;margin-bottom:4pt">VCNY &middot; AI SCORECARD</p>
 <p style="font-family:Georgia,serif;font-size:26pt;font-weight:normal;color:#111111;margin-bottom:3pt">Audit Report</p>
@@ -504,6 +507,7 @@ ${(() => {
 })()}
 
 <p style="margin-top:36pt;padding-top:8pt;border-top:1pt solid #dddddd;font-size:8pt;color:#aaaaaa;text-align:center">VCNY AI Scorecard &nbsp;&middot;&nbsp; ${esc(monthLabel)} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
+</div>
 </body>
 </html>`;
 
