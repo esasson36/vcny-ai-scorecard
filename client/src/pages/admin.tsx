@@ -1961,7 +1961,10 @@ function TeamsView({ allSubs, allMonths, onOpen, onOpenPerson }: {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
 
   const subs = selectedMonth === "all" ? allSubs : allSubs.filter(s => getMonth(s) === selectedMonth);
-  const teams = [...new Set(subs.map(s => s.team))].sort();
+  const teamCounts = new Map<string, number>();
+  subs.forEach(s => teamCounts.set(s.team, (teamCounts.get(s.team) ?? 0) + 1));
+  // Most submissions first; alphabetical as a tiebreak
+  const teams = [...teamCounts.keys()].sort((a, b) => (teamCounts.get(b)! - teamCounts.get(a)!) || a.localeCompare(b));
 
   function teamPrevAvg(team: string, prevMonth: string): number | null {
     const prevSubs = allSubs.filter(s => s.team === team && getMonth(s) === prevMonth);

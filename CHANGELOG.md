@@ -272,7 +272,13 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   - Implemented as an admin-only `POST /api/report-summary` route so the API key
     stays server-side; the client sends only aggregate stats, never raw data.
 
-## 2026-06-25 — Slimmed the Word report
+## 2026-06-25 — Slimmed the Word report; Teams sorted by activity
+
+- **Teams view is now ordered by submission count** (most submissions first, with
+  an alphabetical tiebreak) instead of alphabetically — so the most active teams
+  surface at the top.
+
+### Slimmed the Word report
 
 - **The Word audit report is now a focused one-pager.** It shows only three
   sections: a **Leaderboard** (Top 3 and Bottom 3 by overall score, with their
