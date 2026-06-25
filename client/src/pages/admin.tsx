@@ -425,136 +425,34 @@ export default function AdminPanel({ onLogout }: Props) {
 ${aiSummary ? `${sectionHead("Executive Summary")}
 <p style="font-size:10.5pt;color:#222222;line-height:1.55;margin-bottom:6pt">${esc(aiSummary)}</p>` : ""}
 
-${sectionHead("Overview")}
-<table style="margin-bottom:14pt">
-  <tr>
-    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
-      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">SUBMISSIONS</p>
-      <p style="font-size:22pt;font-weight:bold;color:#111111;line-height:1;margin-bottom:2pt">${filteredSubs.length}</p>
-      ${employees.length > 0 ? `<p style="font-size:8pt;color:#999999">${employees.length - missing.length} of ${employees.length} employees</p>` : "<p></p>"}
-    </td>
-    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
-      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">RESPONSE RATE</p>
-      <p style="font-size:22pt;font-weight:bold;color:#111111;line-height:1;margin-bottom:2pt">${employees.length > 0 ? Math.round(((employees.length - missing.length) / employees.length) * 100) + "%" : "&mdash;"}</p>
-      ${employees.length > 0 ? `<p style="font-size:8pt;color:#999999">${missing.length} outstanding</p>` : "<p></p>"}
-    </td>
-    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
-      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">AVG GRADE</p>
-      <p style="font-size:22pt;font-weight:bold;color:${gradeColors[overallGrade] || "#111111"};line-height:1;margin-bottom:2pt">${overallGrade}</p>
-      <p style="font-size:8pt;color:#999999">${overallPct}%</p>
-    </td>
-    <td style="background:#f5f5f5;border:1pt solid #e0e0e0;padding:10pt 12pt;width:25%">
-      <p style="font-size:8pt;color:#888888;margin-bottom:3pt">TEAMS</p>
-      <p style="font-size:22pt;font-weight:bold;color:#111111;line-height:1;margin-bottom:2pt">${byTeam.size}</p>
-      <p style="font-size:8pt;color:#999999">represented</p>
-    </td>
-  </tr>
-</table>
-
-${sectionHead("Grade Distribution")}
-<table style="margin-bottom:14pt">
-  <tr>
-    ${["A","B","C","D","F"].map(g => `
-    <td style="background:${gradeBg[g]};border:1pt solid #e0e0e0;padding:10pt;text-align:center;width:20%">
-      <p style="font-size:22pt;font-weight:bold;color:${gradeColors[g]};line-height:1;margin-bottom:2pt">${gradeCounts[g] || 0}</p>
-      <p style="font-size:13pt;color:${gradeColors[g]};font-weight:bold">${g}</p>
-    </td>`).join("")}
-  </tr>
-</table>
-
-${sectionHead("Full Roster &middot; " + esc(monthLabel))}
-<table style="margin-bottom:14pt">
-  <thead>
-    <tr>
-      <th style="width:18%">Name</th>
-      <th style="width:14%">Team</th>
-      <th style="width:28%">Tools</th>
-      <th style="width:10%">Grade</th>
-      <th>Recommendation</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${rosterSorted.map(r => `
-    <tr>
+${(() => {
+  const ranked = personData.filter(r => r.toolRows.length > 0).sort((a, b) => b.avgPct - a.avgPct);
+  if (!ranked.length) return "";
+  const head = `<thead><tr><th style="width:8%">#</th><th style="width:22%">Name</th><th style="width:16%">Team</th><th style="width:34%">Tools</th><th>Grade</th></tr></thead>`;
+  const row = (r: typeof ranked[number], rank: number) => `<tr>
+      <td style="text-align:center;font-weight:bold;color:#888888">${rank}</td>
       <td style="font-weight:bold">${esc(r.sub.name)}</td>
       <td style="color:#666666">${esc(r.sub.team)}</td>
       <td style="font-size:9pt;color:#555555">${r.toolRows.map(t => `${esc(t.name)} ${badge(t.grade, 9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
       <td>${badge(r.overallGrade, 12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
-      <td style="font-size:9pt;color:#555555">${esc(gradeAction(r.overallGrade))}</td>
-    </tr>`).join("")}
-  </tbody>
-</table>
-
-${sectionHead("By Team")}
-${Array.from(byTeam.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([team, members]) => {
-  const tPct = Math.round(members.reduce((s,r) => s + r.avgPct, 0) / members.length);
-  const tGrade = pctToGrade(tPct);
-  return `<p style="font-size:10pt;font-weight:bold;color:#333333;border-bottom:1pt solid #dddddd;padding-bottom:3pt;margin-bottom:2pt;margin-top:10pt">
-    ${esc(team)} &nbsp; ${badge(tGrade, 10)} &nbsp; <span style="font-weight:normal;color:#999999;font-size:9pt">${members.length} submitted &middot; ${tPct}% avg</span>
-  </p>
-  <table style="margin-bottom:6pt">
-    <tbody>
-      ${members.sort((a,b) => gradeOrder.indexOf(a.overallGrade)-gradeOrder.indexOf(b.overallGrade)||a.sub.name.localeCompare(b.sub.name)).map(r=>`
-      <tr>
-        <td style="width:40%;font-size:10pt">${esc(r.sub.name)}</td>
-        <td style="font-size:9pt;color:#666666">${r.toolRows.map(t=>esc(t.name)).join(", ")}</td>
-        <td style="width:15%">${badge(r.overallGrade, 10)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
-      </tr>`).join("")}
-    </tbody>
-  </table>`;}).join("")}
-
-${filteredSubs.some(s => s.useCases || s.challenges) ? `
-${sectionHead("Qualitative Feedback")}
-${filteredSubs.filter(s=>s.useCases||s.challenges).map(sub=>`
-<p style="font-weight:bold;font-size:10pt;margin-top:10pt;margin-bottom:2pt">${esc(sub.name)} <span style="font-weight:normal;color:#888888">&middot; ${esc(sub.team)}</span></p>
-${sub.useCases ? `<p style="font-size:8pt;color:#aaaaaa;margin-bottom:2pt">USE CASES</p><p style="font-style:italic;color:#444444;font-size:10pt;margin-bottom:4pt;padding-left:12pt;border-left:2pt solid #dddddd">${esc(sub.useCases)}</p>` : ""}
-${sub.challenges ? `<p style="font-size:8pt;color:#aaaaaa;margin-bottom:2pt">CHALLENGES</p><p style="font-style:italic;color:#444444;font-size:10pt;margin-bottom:4pt;padding-left:12pt;border-left:2pt solid #dddddd">${esc(sub.challenges)}</p>` : ""}
-`).join("")}` : ""}
+    </tr>`;
+  if (ranked.length <= 6) {
+    return `${sectionHead("Leaderboard &middot; " + esc(monthLabel))}
+<table style="margin-bottom:14pt">${head}<tbody>${ranked.map((r, i) => row(r, i + 1)).join("")}</tbody></table>`;
+  }
+  const top = ranked.slice(0, 3);
+  const bottom = ranked.slice(-3);
+  const bottomStart = ranked.length - 2;
+  return `${sectionHead("Top 3 &middot; " + esc(monthLabel))}
+<table style="margin-bottom:14pt">${head}<tbody>${top.map((r, i) => row(r, i + 1)).join("")}</tbody></table>
+${sectionHead("Bottom 3")}
+<table style="margin-bottom:14pt">${head}<tbody>${bottom.map((r, i) => row(r, bottomStart + i)).join("")}</tbody></table>`;
+})()}
 
 ${sectionHead("Not Yet Submitted" + (employees.length > 0 ? " &middot; " + missing.length + " of " + employees.length : ""))}
 ${missing.length > 0
   ? `<p style="font-size:10pt">${missing.map(e=>`<span style="color:#cc2222">${esc(e.name)}</span>${e.team ? ` <span style="color:#aaaaaa">(${esc(e.team)})</span>` : ""}`).join(" &nbsp;&middot;&nbsp; ")}</p>`
   : `<p style="color:#16a34a;font-size:10pt">All employees have submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
-
-${(() => {
-  const best = rosterSorted.filter(r => ["A","B"].includes(r.overallGrade));
-  if (!best.length) return "";
-  return `${sectionHead("Best Performers")}
-<table style="margin-bottom:14pt">
-  <thead><tr>
-    <th style="width:20%">Name</th><th style="width:16%">Team</th><th style="width:32%">Tools</th><th style="width:10%">Grade</th><th>Recommendation</th>
-  </tr></thead>
-  <tbody>
-    ${best.map(r=>`<tr>
-      <td style="font-weight:bold">${esc(r.sub.name)}</td>
-      <td style="color:#666666">${esc(r.sub.team)}</td>
-      <td style="font-size:9pt;color:#555555">${r.toolRows.map(t=>`${esc(t.name)} ${badge(t.grade,9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
-      <td>${badge(r.overallGrade,12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
-      <td style="font-size:9pt;color:#555555">${esc(gradeAction(r.overallGrade))}</td>
-    </tr>`).join("")}
-  </tbody>
-</table>`;
-})()}
-
-${(() => {
-  const poor = rosterSorted.filter(r => ["D","F"].includes(r.overallGrade));
-  if (!poor.length) return "";
-  return `${sectionHead("Needs Improvement")}
-<table style="margin-bottom:14pt">
-  <thead><tr>
-    <th style="width:20%">Name</th><th style="width:16%">Team</th><th style="width:32%">Tools</th><th style="width:10%">Grade</th><th>Action</th>
-  </tr></thead>
-  <tbody>
-    ${poor.map(r=>`<tr>
-      <td style="font-weight:bold">${esc(r.sub.name)}</td>
-      <td style="color:#666666">${esc(r.sub.team)}</td>
-      <td style="font-size:9pt;color:#555555">${r.toolRows.map(t=>`${esc(t.name)} ${badge(t.grade,9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
-      <td>${badge(r.overallGrade,12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
-      <td style="font-size:9pt;color:#cc3300">${esc(gradeAction(r.overallGrade))}</td>
-    </tr>`).join("")}
-  </tbody>
-</table>`;
-})()}
 
 ${(() => {
   const hasCosts = Object.values(toolCosts).some(v => v > 0);

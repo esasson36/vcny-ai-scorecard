@@ -272,6 +272,17 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   - Implemented as an admin-only `POST /api/report-summary` route so the API key
     stays server-side; the client sends only aggregate stats, never raw data.
 
+## 2026-06-25 — Slimmed the Word report
+
+- **The Word audit report is now a focused one-pager.** It shows only three
+  sections: a **Leaderboard** (Top 3 and Bottom 3 by overall score, with their
+  actual rank position), **Cost & ROI**, and **Not Yet Submitted**. The previous
+  full sections (Overview KPIs, Grade Distribution, full roster, By Team,
+  Qualitative Feedback, Best Performers / Needs Improvement lists) were removed
+  from the report — that detail still lives in the admin dashboard and the
+  multi-sheet Excel export. (If there are 6 or fewer submitters, the report shows
+  a single combined leaderboard instead of a top/bottom split.)
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |
