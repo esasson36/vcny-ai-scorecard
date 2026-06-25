@@ -10,6 +10,7 @@ import {
 import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Legend as RechartsLegend } from "recharts";
 import { getCoachSuggestions } from "@/lib/scorecard";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -592,6 +593,27 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
   employees: { name: string; team: string }[];
 }) {
   const [toolFilter, setToolFilter] = useState<ToolKey | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+  const qcDash = useQueryClient();
+
+  useEffect(() => { setSelectedIds(new Set()); }, [subs.length]);
+
+  async function deleteSelected() {
+    const count = selectedIds.size;
+    if (!confirm(`Delete ${count} submission${count > 1 ? "s" : ""} permanently? This cannot be undone.`)) return;
+    setIsDeletingSelected(true);
+    try {
+      for (const id of Array.from(selectedIds)) {
+        await apiRequest("DELETE", `/api/submissions/${id}`, {});
+      }
+      await qcDash.invalidateQueries({ queryKey: ["/api/submissions"] });
+      setSelectedIds(new Set());
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  }
+
   const shownSubs = toolFilter ? subs.filter(s => parseTools(s.tools)[toolFilter]) : subs;
 
   function avgGradeForMonth(m: string) {
@@ -721,13 +743,22 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
             </button>
           )}
         </h2>
-        {allSubs.length > 0 && (
-          <button data-testid="button-clear-all" onClick={onClearAll} disabled={isClearingAll}
-            className="text-[11px] uppercase tracking-[0.08em] border border-red-200 text-red-600 rounded-sm px-3 py-1 hover:border-red-400 hover:bg-red-50 transition-colors disabled:opacity-40"
-            style={{ fontFamily: "'Geist Mono', monospace" }}>
-            {isClearingAll ? "Clearing..." : "Clear all"}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button onClick={deleteSelected} disabled={isDeletingSelected}
+              className="text-[11px] uppercase tracking-[0.08em] border border-red-300 text-red-600 rounded-sm px-3 py-1 hover:border-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+              style={{ fontFamily: "'Geist Mono', monospace" }}>
+              {isDeletingSelected ? "Deleting…" : `Delete ${selectedIds.size}`}
+            </button>
+          )}
+          {allSubs.length > 0 && (
+            <button data-testid="button-clear-all" onClick={onClearAll} disabled={isClearingAll}
+              className="text-[11px] uppercase tracking-[0.08em] border border-red-200 text-red-600 rounded-sm px-3 py-1 hover:border-red-400 hover:bg-red-50 transition-colors disabled:opacity-40"
+              style={{ fontFamily: "'Geist Mono', monospace" }}>
+              {isClearingAll ? "Clearing..." : "Clear all"}
+            </button>
+          )}
+        </div>
       </div>
 
       {shownSubs.length === 0 ? (
@@ -757,6 +788,20 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                 className="card-lift animate-fade-up bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 cursor-pointer"
                 style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}>
                 <div className="flex justify-between items-start">
+                  <div className="flex items-start gap-3">
+                    <input type="checkbox"
+                      checked={selectedIds.has(sub.id)}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => {
+                        e.stopPropagation();
+                        setSelectedIds(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(sub.id); else next.delete(sub.id);
+                          return next;
+                        });
+                      }}
+                      className="mt-[3px] w-4 h-4 shrink-0 cursor-pointer rounded border-border accent-foreground"
+                    />
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-[15px]">{sub.name}</span>
@@ -785,6 +830,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {sub.team} · {fmtMonth(getMonth(sub))}
                     </div>
+                  </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {graded ? (
@@ -1455,8 +1501,18 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
       .sort((a, b) => b.delta - a.delta).slice(0, 5);
   }
 
-  const allTimeRankings = buildRankings(allSubs);
-  const monthRankings = buildRankings(allSubs.filter(s => getMonth(s) === latestMonth));
+  const [lbSearch, setLbSearch] = useState("");
+  const [lbTeam, setLbTeam] = useState("");
+  const lbAllTeams = useMemo(() => [...new Set(allSubs.map(s => s.team))].filter(Boolean).sort(), [allSubs]);
+
+  function filterRankings(rankings: ReturnType<typeof buildRankings>) {
+    return rankings
+      .filter(p => !lbSearch || p.name.toLowerCase().includes(lbSearch.toLowerCase()))
+      .filter(p => !lbTeam || p.team === lbTeam);
+  }
+
+  const allTimeRankings = filterRankings(buildRankings(allSubs));
+  const monthRankings = filterRankings(buildRankings(allSubs.filter(s => getMonth(s) === latestMonth)));
   const mostImproved = buildMostImproved();
   const MEDALS = ["#F4C542", "#A8A9AD", "#CD7F32"];
 
@@ -1513,6 +1569,32 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
 
   return (
     <div className="space-y-6">
+      {/* Search + team filter */}
+      <div className="flex gap-2 flex-wrap">
+        <input
+          type="text"
+          value={lbSearch}
+          onChange={e => setLbSearch(e.target.value)}
+          placeholder="Search by name…"
+          className="flex-1 min-w-[140px] px-3 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+        />
+        <select
+          value={lbTeam}
+          onChange={e => setLbTeam(e.target.value)}
+          className="px-3 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+        >
+          <option value="">All teams</option>
+          {lbAllTeams.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {(lbSearch || lbTeam) && (
+          <button onClick={() => { setLbSearch(""); setLbTeam(""); }}
+            className="text-[11px] uppercase tracking-wider border border-border rounded-sm px-3 py-1.5 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
+            style={{ fontFamily: "'Geist Mono', monospace" }}>
+            Clear ✕
+          </button>
+        )}
+      </div>
+
       {mostImproved.length > 0 && (
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3" style={{ fontFamily: "'Geist Mono', monospace" }}>
@@ -1575,15 +1657,25 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
     setVals(init);
   }, [costs]);
 
+  const [hourlyRate, setHourlyRate] = useState(25);
   const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  // Midpoint hours per week for each time-saved score (0–5)
+  const TIME_HOURS = [0, 0.5, 2, 4, 7.5, 12];
 
   const rows = TOOL_KEYS.map(t => {
     const users = new Set(scope.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
     const pcts = scope.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
+    const timeScores = scope.filter(s => parseTools(s.tools)[t]).map(s => (parseTools(s.tools)[t].time ?? 0) as number);
     const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
     const grade = avg != null ? pctToGrade(avg) : null;
-    const perUser = costs[t] ?? 0;            // input: cost per user / seat
-    const monthlySpend = perUser * users.size; // computed: what we spend on this tool
+    const perUser = costs[t] ?? 0;
+    const monthlySpend = perUser * users.size;
+    const avgTimeScore = timeScores.length ? timeScores.reduce((a, b) => a + b, 0) / timeScores.length : 0;
+    const hoursPerWeek = TIME_HOURS[Math.round(avgTimeScore)] ?? 0;
+    const monthlyValue = hoursPerWeek * 4.33 * hourlyRate * users.size;
+    const roiMultiple = (perUser > 0 && monthlySpend > 0 && monthlyValue > 0)
+      ? Math.round(monthlyValue / monthlySpend * 10) / 10
+      : null;
     let status = { label: "Set a cost to see ROI", cls: "text-muted-foreground" };
     if (perUser > 0) {
       if (users.size === 0) status = { label: "No active users — review", cls: "text-red-600 dark:text-red-400" };
@@ -1591,7 +1683,7 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
       else if (grade === "A" || grade === "B") status = { label: "Strong ROI", cls: "text-emerald-600 dark:text-emerald-400" };
       else status = { label: "Moderate ROI", cls: "text-amber-600 dark:text-amber-400" };
     }
-    return { t, users: users.size, avg, grade, perUser, monthlySpend, status };
+    return { t, users: users.size, avg, grade, perUser, monthlySpend, monthlyValue, roiMultiple, status };
   });
   const totalSpend = rows.reduce((s, r) => s + r.monthlySpend, 0);
 
@@ -1601,6 +1693,19 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
         Active users and grades reflect {latest ? <b>{fmtMonth(latest)}</b> : "all submissions"} — your most recent month of data.
         Enter what VCNY pays <b>per user</b> for each tool; monthly spend is that times the number of active users.
       </p>
+
+      {/* Hourly rate input for ROI calculation */}
+      <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-card border border-border rounded-sm flex-wrap">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Avg hourly rate</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-muted-foreground">$</span>
+          <input type="number" min={1} step={1} value={hourlyRate}
+            onChange={e => setHourlyRate(Math.max(1, Number(e.target.value) || 25))}
+            className="w-20 px-2 py-1 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
+          <span className="text-xs text-muted-foreground">/hr</span>
+        </div>
+        <span className="text-xs text-muted-foreground">Used to estimate the dollar value of time saved per tool</span>
+      </div>
 
       <div className="space-y-3">
         {rows.map(r => (
@@ -1636,6 +1741,23 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving }: {
                 {r.grade ? <GradeBadge grade={r.grade} className="text-[22px] px-2.5 py-1" /> : <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>—</div>}
               </div>
             </div>
+            {r.perUser > 0 && r.users > 0 && r.monthlyValue > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-5 text-xs flex-wrap">
+                <div>
+                  <span className="text-muted-foreground">Est. value saved: </span>
+                  <span className="font-semibold">{money(r.monthlyValue)}/mo</span>
+                </div>
+                {r.roiMultiple !== null && (
+                  <div>
+                    <span className="text-muted-foreground">ROI: </span>
+                    <span className={cn("font-semibold", r.roiMultiple >= 1 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500")}>
+                      {r.roiMultiple.toFixed(1)}× return
+                    </span>
+                  </div>
+                )}
+                <span className="text-muted-foreground">({(r.monthlyValue / hourlyRate).toFixed(0)} hrs saved/mo est.)</span>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1758,6 +1880,16 @@ function TeamsView({ allSubs, allMonths, onOpen, onOpenPerson }: {
 
   const subs = selectedMonth === "all" ? allSubs : allSubs.filter(s => getMonth(s) === selectedMonth);
   const teams = [...new Set(subs.map(s => s.team))].sort();
+
+  function teamPrevAvg(team: string, prevMonth: string): number | null {
+    const prevSubs = allSubs.filter(s => s.team === team && getMonth(s) === prevMonth);
+    const pcts: number[] = [];
+    prevSubs.forEach(sub => {
+      const tools = parseTools(sub.tools);
+      Object.keys(tools).forEach(t => pcts.push(calcScore(tools[t]).pct));
+    });
+    return pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
+  }
 
   function teamStats(team: string) {
     const tsubs = subs.filter(s => s.team === team);
@@ -1890,16 +2022,33 @@ function TeamsView({ allSubs, allMonths, onOpen, onOpenPerson }: {
           return (
             <div key={team} onClick={() => setSelectedTeam(team)}
               className="card-lift bg-card border border-border rounded-sm p-5 hover:border-foreground/40 cursor-pointer">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="text-base font-semibold">{team}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{tsubs.length} submission{tsubs.length !== 1 ? "s" : ""} · click to view</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground font-mono">{avg}%</span>
-                  <span className={cn("text-2xl font-medium leading-none", gradeClass(grade))} style={{ fontFamily: "'Fraunces', serif" }}>{grade}</span>
-                </div>
-              </div>
+              {(() => {
+                const prevIdx = selectedMonth !== "all" ? allMonths.indexOf(selectedMonth) : -1;
+                const prevMonth = prevIdx >= 0 ? allMonths[prevIdx + 1] ?? null : null;
+                const prevAvg = prevMonth ? teamPrevAvg(team, prevMonth) : null;
+                const delta = prevAvg !== null ? avg - prevAvg : null;
+                return (
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="text-base font-semibold">{team}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">{tsubs.length} submission{tsubs.length !== 1 ? "s" : ""} · click to view</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {delta !== null && (
+                        <span className={cn("text-[10px] font-mono px-1.5 py-0.5 rounded",
+                          delta > 0 ? "text-green-500 bg-green-500/10" :
+                          delta < 0 ? "text-red-500 bg-red-500/10" :
+                          "text-muted-foreground bg-secondary"
+                        )}>
+                          {delta > 0 ? "↑+" : delta < 0 ? "↓" : "→"}{delta !== 0 ? Math.abs(delta) + "%" : ""}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground font-mono">{avg}%</span>
+                      <span className={cn("text-2xl font-medium leading-none", gradeClass(grade))} style={{ fontFamily: "'Fraunces', serif" }}>{grade}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Tool grades */}
               <div className="flex gap-2 flex-wrap mb-3">
@@ -2114,6 +2263,40 @@ function TeamCompareView({ allSubs, allMonths, teamA, teamB, onChangeA, onChange
           );
         })}
       </div>
+
+      {/* Radar chart — overall metric comparison */}
+      {(subsA.length > 0 || subsB.length > 0) && (() => {
+        const radarData = (["freq", "time", "impact", "adopt"] as MetricKey[]).map(m => {
+          const metricLabel = ({ freq: "Frequency", time: "Time Saved", impact: "Impact", adopt: "Adoption" } as Record<string, string>)[m];
+          function metricAvg(subs: Submission[]) {
+            const vals = subs.flatMap(sub =>
+              TOOL_KEYS.flatMap(t => {
+                const ts = parseTools(sub.tools);
+                return ts[t] ? [(ts[t][m] ?? 0) as number] : [];
+              })
+            );
+            return vals.length ? Math.round(vals.reduce((a: number, b: number) => a + b, 0) / vals.length * 10) / 10 : 0;
+          }
+          return { metric: metricLabel, a: metricAvg(subsA), b: metricAvg(subsB) };
+        });
+        return (
+          <div className="bg-card border border-border rounded-sm p-5 mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4" style={{ fontFamily: "'Geist Mono', monospace" }}>
+              Overall comparison — avg metric scores (0–5 scale)
+            </p>
+            <ResponsiveContainer width="100%" height={260}>
+              <RadarChart data={radarData}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 12 }} />
+                <PolarRadiusAxis angle={90} domain={[0, 5]} tickCount={4} tick={{ fontSize: 10 }} />
+                <Radar name={teamA || "Team A"} dataKey="a" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} />
+                <Radar name={teamB || "Team B"} dataKey="b" stroke="#f97316" fill="#f97316" fillOpacity={0.25} />
+                <RechartsLegend />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
 
       {/* Per-tool comparison table */}
       <div className="bg-card border border-border rounded-sm overflow-hidden mb-4">

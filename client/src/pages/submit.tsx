@@ -32,6 +32,8 @@ export default function SubmitPage() {
   const [useCases, setUseCases] = useState("");
   const [challenges, setChallenges] = useState("");
   const [error, setError] = useState("");
+  const [nameError, setNameError] = useState(false);
+  const [teamError, setTeamError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [tips, setTips] = useState<string[]>([]);
   const [dupWarning, setDupWarning] = useState("");
@@ -76,8 +78,11 @@ export default function SubmitPage() {
 
   function handleSubmit() {
     setError("");
-    if (!name.trim() || !team) { setError("Please add your name and team."); return; }
-    if (team === "Other" && !otherTeam.trim()) { setError("Please enter your team name."); return; }
+    setNameError(false);
+    setTeamError(false);
+    if (!name.trim()) { setNameError(true); setError("Please enter your name."); return; }
+    if (!team) { setTeamError(true); setError("Please select your team."); return; }
+    if (team === "Other" && !otherTeam.trim()) { setTeamError(true); setError("Please enter your team name."); return; }
     const activeTools = TOOL_KEYS.filter(t => selected[t]);
     const activeFb = FEEDBACK_KEYS.filter(t => fbSelected[t]);
     if (activeTools.length === 0 && activeFb.length === 0) {
@@ -157,6 +162,33 @@ export default function SubmitPage() {
           <a href="/#/admin" className="text-[11px] uppercase tracking-[0.12em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors" style={{ fontFamily: "'Geist Mono', monospace" }}>Admin</a>
         </div>
 
+        {/* Step progress */}
+        <div className="flex items-center mb-6 animate-fade-up" style={{ animationDelay: "30ms" }}>
+          {[
+            { label: "Details", done: !!(name.trim() && team) },
+            { label: "Rate tools", done: TOOL_KEYS.some(t => selected[t]) || FEEDBACK_KEYS.some(t => fbSelected[t]) },
+            { label: "Comments", done: !!(useCases.trim() || challenges.trim()) },
+          ].map((step, i, arr) => (
+            <div key={i} className="flex items-center flex-1 last:flex-none">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300",
+                  step.done ? "bg-foreground text-background" : "border-[1.5px] border-border text-muted-foreground"
+                )}>
+                  {step.done ? "✓" : i + 1}
+                </div>
+                <span className={cn(
+                  "text-[11px] transition-colors hidden sm:block",
+                  step.done ? "text-foreground font-medium" : "text-muted-foreground"
+                )} style={{ fontFamily: "'Geist Mono', monospace" }}>{step.label}</span>
+              </div>
+              {i < arr.length - 1 && (
+                <div className={cn("flex-1 h-px mx-3 transition-colors duration-300", step.done ? "bg-foreground/40" : "bg-border")} />
+              )}
+            </div>
+          ))}
+        </div>
+
         {/* Your details */}
         <div className="bg-card border border-border rounded-sm p-6 mb-4 animate-fade-up" style={{ animationDelay: "60ms" }}>
           <div className="flex items-center gap-3 mb-4">
@@ -170,9 +202,10 @@ export default function SubmitPage() {
                 data-testid="input-name"
                 type="text"
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={e => { setName(e.target.value); if (nameError) setNameError(false); }}
                 placeholder="e.g. Sarah Chen"
-                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+                className={cn("w-full px-3 py-2 border-[1.5px] rounded-sm text-sm bg-background text-foreground focus:outline-none transition-colors",
+                  nameError ? "border-red-400 focus:border-red-500" : "border-input focus:border-foreground")}
               />
             </div>
             <div>
@@ -180,8 +213,9 @@ export default function SubmitPage() {
               <select
                 data-testid="select-team"
                 value={team}
-                onChange={e => { setTeam(e.target.value); setOtherTeam(""); }}
-                className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors"
+                onChange={e => { setTeam(e.target.value); setOtherTeam(""); if (teamError) setTeamError(false); }}
+                className={cn("w-full px-3 py-2 border-[1.5px] rounded-sm text-sm bg-background text-foreground focus:outline-none transition-colors",
+                  teamError ? "border-red-400 focus:border-red-500" : "border-input focus:border-foreground")}
               >
                 <option value="">Choose team...</option>
                 {TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
@@ -307,16 +341,18 @@ export default function SubmitPage() {
           </div>
         )}
 
-        <button
-          data-testid="button-submit"
-          onClick={handleSubmit}
-          disabled={mutation.isPending}
-          className="group w-full bg-foreground text-background py-3.5 rounded-sm font-semibold text-sm hover:opacity-90 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {mutation.isPending
-            ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</>
-            : <>Submit scorecard<span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span></>}
-        </button>
+        <div className="sticky bottom-0 -mx-5 px-5 pb-4 pt-3 bg-background sm:relative sm:bottom-auto sm:mx-0 sm:px-0 sm:pb-0 sm:pt-0 sm:bg-transparent border-t border-border sm:border-none z-10">
+          <button
+            data-testid="button-submit"
+            onClick={handleSubmit}
+            disabled={mutation.isPending}
+            className="group w-full bg-foreground text-background py-3.5 rounded-sm font-semibold text-sm hover:opacity-90 active:scale-[0.99] transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {mutation.isPending
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</>
+              : <>Submit scorecard<span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span></>}
+          </button>
+        </div>
 
         <div className="mt-10 pt-5 border-t border-border text-center text-[11px] uppercase tracking-[0.08em] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>
           VCNY · AI Scorecard · v2.0
