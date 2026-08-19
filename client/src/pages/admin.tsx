@@ -142,8 +142,12 @@ export default function AdminPanel({ onLogout }: Props) {
   });
 
   const clearAllMutation = useMutation({
-    mutationFn: async () => { await apiRequest("DELETE", "/api/submissions", {}); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/submissions"] }); setView("dashboard"); },
+    mutationFn: async () => { await apiRequest("DELETE", "/api/submissions", { confirm: "DELETE ALL" }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/submissions"] });
+      qc.invalidateQueries({ queryKey: ["/api/submissions-archived"] });
+      setView("dashboard");
+    },
   });
 
   const updateMutation = useMutation({
@@ -598,8 +602,18 @@ ${(() => {
             onOpen={id => { setActiveId(id); setView("detail"); }}
             onOpenPerson={name => { setActivePerson(name); setView("person"); }}
             onClearAll={() => {
-              if (confirm(`Delete all ${subs.length} submission${subs.length !== 1 ? "s" : ""} permanently? This cannot be undone.`))
-                clearAllMutation.mutate();
+              const n = subs.length;
+              const typed = prompt(
+                `This will move all ${n} submission${n !== 1 ? "s" : ""} to Recently deleted.\n\n` +
+                `You can restore them from Settings → Recently deleted.\n\n` +
+                `To confirm, type:  DELETE ALL`
+              );
+              if (typed === null) return;                    // cancelled
+              if (typed.trim().toUpperCase() !== "DELETE ALL") {
+                alert("Not deleted — the confirmation text didn't match.");
+                return;
+              }
+              clearAllMutation.mutate();
             }}
             isClearingAll={clearAllMutation.isPending}
             headcounts={headcounts}
@@ -2472,6 +2486,86 @@ function TeamCompareView({ allSubs, allMonths, teamA, teamB, onChangeA, onChange
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
+// ── Recently deleted ──────────────────────────────────────────────────────────
+// Deleted submissions are archived, not destroyed. This is the undo.
+function RecentlyDeleted() {
+  const qc = useQueryClient();
+  const { data: archived = [], isLoading } = useQuery<Submission[]>({
+    queryKey: ["/api/submissions-archived"],
+  });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["/api/submissions-archived"] });
+    qc.invalidateQueries({ queryKey: ["/api/submissions"] });
+  };
+
+  const restoreOne = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("POST", `/api/submissions-archived/${id}/restore`, {}); },
+    onSuccess: refresh,
+  });
+  const restoreAll = useMutation({
+    mutationFn: async () => { await apiRequest("POST", "/api/submissions-archived/restore-all", {}); },
+    onSuccess: refresh,
+  });
+  const purgeOne = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/submissions-archived/${id}`, {}); },
+    onSuccess: refresh,
+  });
+
+  if (isLoading) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-6">
+      <div className="flex items-start justify-between mb-1 gap-3">
+        <h2 className="text-base font-semibold">Recently deleted</h2>
+        {archived.length > 0 && (
+          <button onClick={() => restoreAll.mutate()} disabled={restoreAll.isPending}
+            className="text-[11px] uppercase tracking-[0.08em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors disabled:opacity-50 shrink-0"
+            style={{ fontFamily: "'Geist Mono', monospace" }}>
+            {restoreAll.isPending ? "Restoring…" : `Restore all (${archived.length})`}
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Deleted submissions are kept here so nothing is lost by accident. Restore them any time.
+      </p>
+
+      {archived.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing deleted. 🎉</p>
+      ) : (
+        <div className="divide-y divide-border border border-border rounded-sm max-h-80 overflow-y-auto">
+          {archived.map(sub => (
+            <div key={sub.id} className="flex items-center justify-between px-3 py-2 gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">{sub.name}</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {sub.team} · {fmtMonth(getMonth(sub))}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => restoreOne.mutate(sub.id)} disabled={restoreOne.isPending}
+                  className="text-xs border border-border rounded-sm px-2.5 py-1 hover:border-foreground transition-colors disabled:opacity-50">
+                  Restore
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm(`Permanently delete ${sub.name}'s submission? This one cannot be undone.`))
+                      purgeOne.mutate(sub.id);
+                  }}
+                  disabled={purgeOne.isPending}
+                  title="Delete permanently"
+                  className="text-xs border border-red-200 text-red-600 rounded-sm px-2 py-1 hover:border-red-400 transition-colors disabled:opacity-50">
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsView() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -2517,7 +2611,9 @@ function SettingsView() {
   }
 
   return (
-    <div className="max-w-md">
+    <div className="max-w-md space-y-4">
+      <RecentlyDeleted />
+
       <div className="bg-card border border-border rounded-sm p-6">
         <h2 className="text-base font-semibold mb-1">Change password</h2>
         <p className="text-xs text-muted-foreground mb-5">Update your admin login credentials.</p>

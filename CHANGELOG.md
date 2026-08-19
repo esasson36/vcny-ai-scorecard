@@ -292,6 +292,34 @@ CREATE TABLE IF NOT EXISTS employees (id serial PRIMARY KEY, name text NOT NULL,
   multi-sheet Excel export. (If there are 6 or fewer submitters, the report shows
   a single combined leaderboard instead of a top/bottom split.)
 
+## 2026-08-19 — Deletes are now recoverable
+
+Context: an accidental "Clear all" permanently destroyed roughly 20+ submissions.
+The button hard-deleted every row behind a single one-click `OK`, with no backup
+(Supabase free tier has none) and no undo. These two changes make that
+unrepeatable.
+
+- **Soft delete.** Deleting a submission — individually or via "Clear all" — no
+  longer removes the row. It stamps a new `archived_at` column; archived rows are
+  hidden from every read path (dashboard, exports, reports, duplicate checks) but
+  stay in the table.
+- **Recently deleted panel** in Settings lists everything archived, with
+  **Restore** per submission and **Restore all**. Permanent removal is available
+  only one already-archived row at a time, behind its own confirm — there is no
+  bulk hard-delete path left in the app.
+- **"Clear all" now requires typing `DELETE ALL`.** A stray click or a reflexive
+  Enter on a confirm dialog can't trigger it. The server enforces this too:
+  `DELETE /api/submissions` rejects the request unless the body carries
+  `{ confirm: "DELETE ALL" }`, so the guard can't be bypassed from the client.
+- New admin routes: `GET /api/submissions-archived`,
+  `POST /api/submissions-archived/:id/restore`,
+  `POST /api/submissions-archived/restore-all`,
+  `DELETE /api/submissions-archived/:id` (purge one archived row).
+- **Migration required:** `migrations/add-archived-at.sql`
+  (`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS archived_at timestamptz`).
+  Must be run *before* deploying this change, or reads referencing the new column
+  will fail. Applied to production on 2026-08-19.
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |

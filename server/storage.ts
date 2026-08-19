@@ -27,6 +27,7 @@ interface Row {
   month: string;
   notes: string | null;
   feedback: string | null;
+  archived_at?: string | null;
 }
 
 function toSubmission(r: Row): Submission {
@@ -52,6 +53,10 @@ export interface IStorage {
   updateSubmission(id: string, data: { name?: string; team?: string; notes?: string }): Promise<Submission | undefined>;
   deleteSubmission(id: string): Promise<boolean>;
   clearAllSubmissions(): Promise<number>;
+  getArchivedSubmissions(): Promise<Submission[]>;
+  restoreSubmission(id: string): Promise<boolean>;
+  restoreAllArchived(): Promise<number>;
+  purgeSubmission(id: string): Promise<boolean>;
   checkDuplicate(name: string, team: string, month: string): Promise<boolean>;
   getHeadcounts(): Promise<Record<string, number>>;
   setHeadcount(team: string, count: number): Promise<void>;
@@ -66,6 +71,7 @@ export const storage: IStorage = {
     const { data, error } = await supabase
       .from("submissions")
       .select("*")
+      .is("archived_at", null) // archived = deleted; hidden but recoverable
       .order("timestamp", { ascending: false });
     if (error) throw error;
     return (data as Row[]).map(toSubmission);
@@ -127,11 +133,14 @@ export const storage: IStorage = {
     return this.getSubmission(id);
   },
 
+  // Deletes are soft: the row stays, stamped with archived_at, and is hidden
+  // from every read path. Undo lives in Settings → Recently deleted.
   async deleteSubmission(id: string): Promise<boolean> {
     const { error, count } = await supabase
       .from("submissions")
-      .delete({ count: "exact" })
-      .eq("id", id);
+      .update({ archived_at: new Date().toISOString() }, { count: "exact" })
+      .eq("id", id)
+      .is("archived_at", null);
     if (error) throw error;
     return (count ?? 0) > 0;
   },
@@ -139,10 +148,49 @@ export const storage: IStorage = {
   async clearAllSubmissions(): Promise<number> {
     const { error, count } = await supabase
       .from("submissions")
-      .delete({ count: "exact" })
-      .neq("id", ""); // Supabase requires a filter; this matches every row
+      .update({ archived_at: new Date().toISOString() }, { count: "exact" })
+      .is("archived_at", null); // only archive what's currently live
     if (error) throw error;
     return count ?? 0;
+  },
+
+  async getArchivedSubmissions(): Promise<Submission[]> {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("*")
+      .not("archived_at", "is", null)
+      .order("archived_at", { ascending: false });
+    if (error) throw error;
+    return (data as Row[]).map(toSubmission);
+  },
+
+  async restoreSubmission(id: string): Promise<boolean> {
+    const { error, count } = await supabase
+      .from("submissions")
+      .update({ archived_at: null }, { count: "exact" })
+      .eq("id", id);
+    if (error) throw error;
+    return (count ?? 0) > 0;
+  },
+
+  async restoreAllArchived(): Promise<number> {
+    const { error, count } = await supabase
+      .from("submissions")
+      .update({ archived_at: null }, { count: "exact" })
+      .not("archived_at", "is", null);
+    if (error) throw error;
+    return count ?? 0;
+  },
+
+  // The only true destructive path — one archived row at a time, never in bulk.
+  async purgeSubmission(id: string): Promise<boolean> {
+    const { error, count } = await supabase
+      .from("submissions")
+      .delete({ count: "exact" })
+      .eq("id", id)
+      .not("archived_at", "is", null); // refuse to hard-delete a live row
+    if (error) throw error;
+    return (count ?? 0) > 0;
   },
 
   async checkDuplicate(name: string, team: string, month: string): Promise<boolean> {
@@ -152,6 +200,7 @@ export const storage: IStorage = {
       .eq("name", name)
       .eq("team", team)
       .eq("month", month)
+      .is("archived_at", null)
       .limit(1);
     if (error) throw error;
     return (data?.length ?? 0) > 0;

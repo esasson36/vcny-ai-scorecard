@@ -163,9 +163,36 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json({ ok: true });
   });
 
-  app.delete("/api/submissions", requireAdmin, async (_req, res) => {
+  app.delete("/api/submissions", requireAdmin, async (req, res) => {
+    // Bulk delete requires an explicit typed confirmation, so a stray click can't wipe everything
+    if (req.body?.confirm !== "DELETE ALL") {
+      return res.status(400).json({ error: 'Confirmation required: send { confirm: "DELETE ALL" }.' });
+    }
     const count = await storage.clearAllSubmissions();
     res.json({ ok: true, deleted: count });
+  });
+
+  // ── Recently deleted (archived) — admin only ─────────────────────────
+  app.get("/api/submissions-archived", requireAdmin, async (_req, res) => {
+    res.json(await storage.getArchivedSubmissions());
+  });
+
+  app.post("/api/submissions-archived/restore-all", requireAdmin, async (_req, res) => {
+    const count = await storage.restoreAllArchived();
+    res.json({ ok: true, restored: count });
+  });
+
+  app.post("/api/submissions-archived/:id/restore", requireAdmin, async (req, res) => {
+    const restored = await storage.restoreSubmission(req.params.id);
+    if (!restored) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true });
+  });
+
+  // Permanent removal — only ever one already-archived row at a time
+  app.delete("/api/submissions-archived/:id", requireAdmin, async (req, res) => {
+    const purged = await storage.purgeSubmission(req.params.id);
+    if (!purged) return res.status(404).json({ error: "Not found or not archived" });
+    res.json({ ok: true });
   });
 
   // ── Employees (admin only) ──────────────────────────────────────────
