@@ -293,34 +293,63 @@ export const storage: IStorage = {
     // The email/active columns arrive with add-seats-and-roster.sql. Between the
     // deploy and that migration the select fails, so fall back to the columns that
     // have always existed rather than 500-ing every caller (including backups).
+    let rows: { fullName: string; email: string; team: string; active: boolean }[];
     if (error) {
       const { data: legacy, error: legacyErr } = await supabase
         .from("employees").select("name, team").order("name");
       if (legacyErr) throw legacyErr;
-      return ((legacy as { name: string; team: string | null }[]) ?? [])
+      rows = ((legacy as { name: string; team: string | null }[]) ?? [])
         .map(r => ({ fullName: r.name, email: "", team: r.team ?? "", active: true }));
+    } else {
+      rows = ((data as { name: string; email: string | null; team: string | null; active: boolean | null }[]) ?? [])
+        .map(r => ({
+          fullName: r.name,
+          email: r.email ?? "",
+          team: r.team ?? "",
+          active: r.active !== false,
+        }));
     }
-    return ((data as { name: string; email: string | null; team: string | null; active: boolean | null }[]) ?? [])
-      .map(r => ({
-        fullName: r.name,
-        email: r.email ?? "",
-        team: r.team ?? "",
-        active: r.active !== false,
-      }));
+    // Defensive dedupe, same reason as getEmployees: the table historically held
+    // each person ~4 times. migrations/dedupe-employees.sql fixes the data; this
+    // keeps the UI correct even before that runs. Duplicates merge, preferring
+    // whichever copy actually has an email/team filled in.
+    const byName = new Map<string, { fullName: string; email: string; team: string; active: boolean }>();
+    for (const r of rows) {
+      const key = r.fullName.toLowerCase().trim();
+      const prev = byName.get(key);
+      if (!prev) { byName.set(key, r); continue; }
+      byName.set(key, {
+        fullName: prev.fullName,
+        email: prev.email || r.email,
+        team: prev.team || r.team,
+        active: prev.active && r.active,
+      });
+    }
+    return [...byName.values()];
   },
 
   async upsertRosterEntry(e: { fullName: string; email: string; team: string; active: boolean }): Promise<void> {
+    // Not a Postgres upsert: ON CONFLICT needs a unique constraint on name, which
+    // the table historically lacked (it held duplicates). Delete-then-insert works
+    // either way, and saving a row collapses any lingering duplicates of it.
+    // ilike catches case variants like "jane yang" vs "Jane Yang"; escape the two
+    // pattern characters so a name can never act as a wildcard.
+    const pattern = e.fullName.replace(/([%_\\])/g, "\\$1");
+    const { error: delErr } = await supabase.from("employees").delete().ilike("name", pattern);
+    if (delErr) throw delErr;
     const { error } = await supabase
       .from("employees")
-      .upsert({ name: e.fullName, email: e.email, team: e.team, active: e.active }, { onConflict: "name" });
+      .insert({ name: e.fullName, email: e.email, team: e.team, active: e.active });
     if (error) throw error;
   },
 
   async deleteRosterEntry(fullName: string): Promise<boolean> {
+    // ilike, for the same reason as upsert: remove every case variant of the name
+    const pattern = fullName.replace(/([%_\\])/g, "\\$1");
     const { error, count } = await supabase
       .from("employees")
       .delete({ count: "exact" })
-      .eq("name", fullName);
+      .ilike("name", pattern);
     if (error) throw error;
     return (count ?? 0) > 0;
   },

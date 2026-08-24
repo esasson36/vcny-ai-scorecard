@@ -419,51 +419,9 @@ export default function AdminPanel({ onLogout }: Props) {
     setReportBusy(true);
     try {
     const esc = (s: string) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-    const TOOLS_MAP: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
     const monthLabel = selectedMonth === "all" ? "All Time" : fmtMonth(selectedMonth);
     const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
     const gradeColors: Record<string, string> = { A: "#16a34a", B: "#65a30d", C: "#d97706", D: "#ea580c", F: "#dc2626" };
-    const gradeBg: Record<string, string> = { A: "#f0fdf4", B: "#f7fee7", C: "#fffbeb", D: "#fff7ed", F: "#fef2f2" };
-    const gradeOrder = ["A","B","C","D","F"];
-
-    const personData = filteredSubs.map(sub => {
-      const tools = parseTools(sub.tools);
-      const toolRows = Object.keys(tools).map(t => {
-        const ts = tools[t];
-        const sc = calcScore(ts);
-        return { key: t, name: TOOLS_MAP[t] ?? t, sc, grade: pctToGrade(sc.pct) };
-      });
-      const avgPct = toolRows.length ? Math.round(toolRows.reduce((s, r) => s + r.sc.pct, 0) / toolRows.length) : 0;
-      return { sub, toolRows, avgPct, overallGrade: pctToGrade(avgPct) };
-    });
-
-    const gradeCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-    personData.forEach(r => { gradeCounts[r.overallGrade] = (gradeCounts[r.overallGrade] || 0) + 1; });
-
-    const allPcts = personData.map(r => r.avgPct);
-    const overallPct = allPcts.length ? Math.round(allPcts.reduce((a, b) => a + b, 0) / allPcts.length) : 0;
-    const overallGrade = pctToGrade(overallPct);
-
-    const byTeam = new Map<string, typeof personData>();
-    personData.forEach(r => {
-      const t = r.sub.team || "Other";
-      if (!byTeam.has(t)) byTeam.set(t, []);
-      byTeam.get(t)!.push(r);
-    });
-
-    const submittedFirstNames = new Set(filteredSubs.map(s => s.name.toLowerCase().trim().split(/\s+/)[0]));
-    const nameSubmitted = (empName: string) => {
-      const lower = empName.toLowerCase().trim();
-      if (filteredSubs.some(s => s.name.toLowerCase().trim() === lower)) return true;
-      const empFirst = lower.split(/\s+/)[0];
-      return empFirst.length > 2 && submittedFirstNames.has(empFirst);
-    };
-    const missing = employees.filter(e => !nameSubmitted(e.name));
-
-    const rosterSorted = [...personData].sort((a, b) => {
-      const gi = gradeOrder.indexOf(a.overallGrade) - gradeOrder.indexOf(b.overallGrade);
-      return gi !== 0 ? gi : a.sub.name.localeCompare(b.sub.name);
-    });
 
     // Word-safe badge: bold colored text (no inline-block, no border-radius)
     const badge = (g: string, pt = 11) =>
@@ -476,27 +434,42 @@ export default function AdminPanel({ onLogout }: Props) {
     const sectionHead = (label: string) =>
       `<p style="font-family:Arial,sans-serif;font-size:8pt;color:#999999;border-bottom:1pt solid #cccccc;padding-bottom:3pt;margin:20pt 0 8pt">${upperSafe(label)}</p>`;
 
-    // Ask Claude for an executive summary (skipped gracefully if the key isn't set)
+    // Ask Claude for an executive summary (skipped gracefully if the key isn't set).
+    // Aggregate stats only, and every figure is read from the same model as the
+    // report body, so the summary can never contradict the tables beneath it.
     let aiSummary = "";
     try {
+      const gradeCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+      model.people.forEach(p => { gradeCounts[p.grade] = (gradeCounts[p.grade] || 0) + 1; });
       const stats = {
         month: monthLabel,
-        submissions: filteredSubs.length,
-        employees: employees.length || null,
-        responseRatePct: employees.length ? Math.round(((employees.length - missing.length) / employees.length) * 100) : null,
-        outstanding: employees.length ? missing.length : null,
-        overallGrade, overallPct,
+        submissions: model.counts.submissionRows,
+        people: model.counts.uniquePeople,
+        rosterTotal: model.counts.rosterTotal || null,
+        responseRatePct: model.counts.rosterTotal
+          ? Math.round((model.counts.uniquePeople / model.counts.rosterTotal) * 100) : null,
+        outstanding: model.counts.rosterTotal ? model.counts.notSubmitted : null,
+        rankingRule: "People are graded on their strongest tool, not their average across tools.",
         gradeCounts,
-        tools: TOOL_KEYS.map(t => {
-          const pcts = personData.flatMap(r => r.toolRows.filter(x => x.key === t).map(x => x.sc.pct));
-          return { tool: TOOLS[t], users: pcts.length, avgPct: pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null };
-        }).filter(x => x.users > 0),
-        teams: Array.from(byTeam.entries()).map(([team, members]) => ({
-          team, members: members.length,
-          avgPct: Math.round(members.reduce((s, r) => s + r.avgPct, 0) / members.length),
+        tools: model.toolRollups.filter(t => t.measuredUsers > 0).map(t => ({
+          tool: t.toolName,
+          users: t.measuredUsers,
+          paidSeats: t.paidSeats,
+          unmeasuredSeats: t.unmeasuredSeats,
+          hoursSavedPerMonth: Math.round(t.monthlyHours),
+          note: "hours are self-reported and unvalidated",
         })),
-        needsAttention: rosterSorted.filter(r => ["C", "D", "F"].includes(r.overallGrade)).map(r => ({ name: r.sub.name, team: r.sub.team, grade: r.overallGrade })),
-        topPerformers: rosterSorted.filter(r => ["A", "B"].includes(r.overallGrade)).map(r => ({ name: r.sub.name, team: r.sub.team, grade: r.overallGrade })),
+        teams: model.teams.map(t => ({
+          team: t.team, members: t.n, avgPct: t.avgPct,
+          grade: t.grade ?? `not graded (only ${t.n} respondent${t.n !== 1 ? "s" : ""})`,
+        })),
+        coaching: model.coaching,
+        seatRevocations: model.revocations.map(r => ({ name: r.name, tool: r.tool, pct: r.pct })),
+        unmanagedAccountCandidates: model.shadowFlags.map(f => ({
+          name: f.name, tool: f.toolMentioned, note: "keyword match, needs human confirmation",
+        })),
+        topPerformers: model.rankedExcludingOwner.slice(0, 5)
+          .map(p => ({ name: p.name, team: p.team, bestTool: p.bestTool, pct: p.bestPct })),
       };
       const res = await apiRequest("POST", "/api/report-summary", { stats });
       const data = await res.json();

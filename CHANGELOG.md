@@ -351,6 +351,43 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-08-24 — Roster duplicates fixed at the source; consistency sweep
+
+The new Roster screen showed every name four times. Root cause: the employees
+table physically holds each person ~4 times (since June), and the June fix
+deduplicated at read time in `getEmployees()` — hiding the problem instead of
+solving it. The new `getRoster()` read the table directly, so the duplicates
+showed straight through.
+
+- **Migration `dedupe-employees.sql`**: normalises whitespace in names, deletes
+  the duplicate rows, and adds a case-insensitive unique index so duplicates can
+  never come back. Safe to run twice.
+- `getRoster()` also dedupes defensively (merging whichever copy has an email or
+  team filled in), so the UI is correct even before the migration runs.
+- **Roster "Add" was broken on arrival**: `upsert(..., { onConflict: "name" })`
+  errors in Postgres unless `name` has a unique constraint — which it could not
+  have while duplicates existed. Saving is now delete-then-insert, which needs no
+  constraint, treats "jane yang" and "Jane Yang" as the same person, and
+  collapses any lingering duplicates of a row whenever it is saved. Deleting a
+  roster entry is case-insensitive for the same reason.
+
+Sweep of everything else that no longer made sense:
+
+- **The AI executive summary was still fed the old numbers** — average-based
+  grades and the fuzzy employees count — so the summary paragraph could
+  contradict the report body it sits on top of (it would still have called Alina
+  Soler a D). Its stats now come from the same model as every table below it,
+  including the ranking rule, seat gaps, revocations, and unmanaged-account
+  candidates (marked as needing human confirmation).
+- Removed the dead `tool_costs` query and mutation, plus leftover helpers that
+  only existed to feed the old stats block (`personData`, `gradeCounts`,
+  `byTeam`, `rosterSorted`, the fuzzy `nameSubmitted`, `TOOLS_MAP`, `gradeBg`,
+  `gradeOrder`).
+- Left alone on purpose: the dashboard's "Not yet submitted" first-name matching
+  (the June fix for people who submit as just "Caitlin") — it is a display aid.
+  The report itself uses exact roster matching and blocks export on mismatches,
+  which is the stricter guarantee.
+
 ## 2026-08-24 — Report rebuilt around a single model (CH-01 … CH-11)
 
 The August workbook and audit report were patched into shape each month, which
