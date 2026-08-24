@@ -9,7 +9,8 @@ import {
 } from "@/lib/scorecard";
 import {
   buildReportModel, resolveName, normalizeName, TIME_HOURS, WEEKS_PER_MONTH, HOURS_CAVEAT,
-  METHODOLOGY_NOTES, SEAT_ACTION_BANDS, type RosterEntry, type SeatRecord,
+  METHODOLOGY_NOTES, SEAT_ACTION_BANDS,
+  type RosterEntry, type SeatRecord, type ReportModel,
 } from "@/lib/report-model";
 import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-react";
 import { Line } from "react-chartjs-2";
@@ -123,15 +124,13 @@ export default function AdminPanel({ onLogout }: Props) {
     queryKey: ["/api/employees"],
   });
 
-  const { data: toolCosts = {}, refetch: refetchCosts } = useQuery<Record<string, number>>({
-    queryKey: ["/api/tool-costs"],
-  });
+  // tool_costs is superseded by the seats table, which carries cost per seat
+  // alongside the seat count. The old rows were copied across by the migration and
+  // the table is still backed up; nothing in the UI reads it any more.
 
-  const setToolCostMutation = useMutation({
-    mutationFn: async ({ tool, monthlyCost }: { tool: string; monthlyCost: number }) => {
-      await apiRequest("POST", "/api/tool-costs", { tool, monthlyCost });
-    },
-    onSuccess: () => refetchCosts(),
+  const setSeatMutation = useMutation({
+    mutationFn: async (seat: SeatRecord) => { await apiRequest("POST", "/api/seats", seat); },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/seats"] }),
   });
 
   const setHeadcountMutation = useMutation({
@@ -791,10 +790,11 @@ ${sectionHead("Methodology &amp; Limitations")}
         )}
 
         {view === "cost" && (
-          <CostView allSubs={subs} allMonths={allMonths} costs={toolCosts}
-            onSetCost={(tool, monthlyCost) => setToolCostMutation.mutate({ tool, monthlyCost })}
-            isSaving={setToolCostMutation.isPending}
-            hourlyRate={hourlyRate} onHourlyRateChange={setHourlyRate} />
+          <CostView model={model} seats={seats}
+            onSetSeat={seat => setSeatMutation.mutate(seat)}
+            isSaving={setSeatMutation.isPending}
+            hourlyRate={hourlyRate} onHourlyRateChange={setHourlyRate}
+            latestMonth={allMonths[0] ?? ""} />
         )}
 
         {view === "settings" && (
@@ -1879,60 +1879,58 @@ function LeaderboardView({ allSubs, allMonths, onOpen, onOpenPerson }: {
 }
 
 // ── Cost / ROI ────────────────────────────────────────────────────────────────
-// Enter each tool's monthly license cost; see cost-per-active-user vs avg grade
-// for the latest month, to support keep/cut decisions.
-function CostView({ allSubs, allMonths, costs, onSetCost, isSaving, hourlyRate, onHourlyRateChange }: {
-  allSubs: Submission[]; allMonths: string[];
-  costs: Record<string, number>;
-  onSetCost: (tool: string, monthlyCost: number) => void;
+// Reads the same report model as the workbook and the Word report, so what you
+// see here is exactly what exports.
+//
+// Paid seats is typed in rather than counted from submissions: only 26 of the
+// roster answered the survey, so counting respondents undercounts what we pay
+// for. The gap between the two is the point — it is what a seat costs us while
+// nobody has reported using it.
+function CostView({ model, seats, onSetSeat, isSaving, hourlyRate, onHourlyRateChange, latestMonth }: {
+  model: ReportModel;
+  seats: SeatRecord[];
+  onSetSeat: (s: SeatRecord) => void;
   isSaving: boolean;
   hourlyRate: number;
   onHourlyRateChange: (v: number) => void;
+  latestMonth: string;
 }) {
-  const latest = allMonths[0] ?? "";
-  const scope = latest ? allSubs.filter(s => getMonth(s) === latest) : allSubs;
-  const [vals, setVals] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const init: Record<string, string> = {};
-    TOOL_KEYS.forEach(t => { init[t] = costs[t] != null ? String(costs[t]) : ""; });
-    setVals(init);
-  }, [costs]);
+  const [draft, setDraft] = useState<Record<string, { paidSeats?: string; costPerSeat?: string }>>({});
+  useEffect(() => { setDraft({}); }, [seats]);
 
-  const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const money = (n: number) => "$" + Math.round(n).toLocaleString();
+  const fieldOf = (tool: string, f: "paidSeats" | "costPerSeat") => {
+    const d = draft[tool]?.[f];
+    if (d !== undefined) return d;
+    const rec = seats.find(s => s.tool === tool);
+    return rec ? String(rec[f]) : "";
+  };
+  const edit = (tool: string, f: "paidSeats" | "costPerSeat", v: string) =>
+    setDraft(p => ({ ...p, [tool]: { ...p[tool], [f]: v } }));
 
-  const rows = TOOL_KEYS.map(t => {
-    const users = new Set(scope.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
-    const pcts = scope.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
-    const timeScores = scope.filter(s => parseTools(s.tools)[t]).map(s => (parseTools(s.tools)[t].time ?? 0) as number);
-    const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
-    const grade = avg != null ? pctToGrade(avg) : null;
-    const perUser = costs[t] ?? 0;
-    const monthlySpend = perUser * users.size;
-    const avgTimeScore = timeScores.length ? timeScores.reduce((a, b) => a + b, 0) / timeScores.length : 0;
-    const hoursPerWeek = TIME_HOURS[Math.round(avgTimeScore)] ?? 0;
-    const monthlyValue = hoursPerWeek * 4.33 * hourlyRate * users.size;
-    const roiMultiple = (perUser > 0 && monthlySpend > 0 && monthlyValue > 0)
-      ? Math.round(monthlyValue / monthlySpend * 10) / 10
-      : null;
-    let status = { label: "Set a cost to see ROI", cls: "text-muted-foreground" };
-    if (perUser > 0) {
-      if (users.size === 0) status = { label: "No active users — review", cls: "text-red-600 dark:text-red-400" };
-      else if (grade === "D" || grade === "F") status = { label: "Low ROI — review", cls: "text-red-600 dark:text-red-400" };
-      else if (grade === "A" || grade === "B") status = { label: "Strong ROI", cls: "text-emerald-600 dark:text-emerald-400" };
-      else status = { label: "Moderate ROI", cls: "text-amber-600 dark:text-amber-400" };
-    }
-    return { t, users: users.size, avg, grade, perUser, monthlySpend, monthlyValue, roiMultiple, status };
-  });
-  const totalSpend = rows.reduce((s, r) => s + r.monthlySpend, 0);
+  function save(tool: ToolKey) {
+    const rec = seats.find(s => s.tool === tool);
+    onSetSeat({
+      tool,
+      paidSeats: Math.max(0, Math.round(Number(fieldOf(tool, "paidSeats")) || 0)),
+      costPerSeat: Math.max(0, Number(fieldOf(tool, "costPerSeat")) || 0),
+      billingOwner: rec?.billingOwner ?? "",
+      asOf: rec?.asOf ?? "",
+      source: rec?.source ?? "",
+    });
+  }
+
+  const numCls = "w-24 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none";
 
   return (
     <div>
       <p className="text-sm text-muted-foreground mb-5">
-        Active users and grades reflect {latest ? <b>{fmtMonth(latest)}</b> : "all submissions"} — your most recent month of data.
-        Enter what VCNY pays <b>per user</b> for each tool; monthly spend is that times the number of active users.
+        Grades and hours reflect {latestMonth ? <b>{fmtMonth(latestMonth)}</b> : "all submissions"}.
+        Enter <b>paid seats</b> — everyone holding a licence, whether or not they filled out the
+        form — and the <b>cost per seat</b>. Spend is seats × cost, so people who never
+        responded still count toward what we pay.
       </p>
 
-      {/* Hourly rate input for ROI calculation */}
       <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-card border border-border rounded-sm flex-wrap">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Avg hourly rate</span>
         <div className="flex items-center gap-1.5">
@@ -1942,74 +1940,156 @@ function CostView({ allSubs, allMonths, costs, onSetCost, isSaving, hourlyRate, 
             className="w-20 px-2 py-1 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
           <span className="text-xs text-muted-foreground">/hr</span>
         </div>
-        <span className="text-xs text-muted-foreground">Used to estimate the dollar value of time saved per tool</span>
+        <span className="text-xs text-muted-foreground">Unloaded wage, not fully-loaded cost — used to value time saved</span>
       </div>
 
       <div className="space-y-3">
-        {rows.map(r => (
-          <div key={r.t} className="bg-card border border-border rounded-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className={cn("pill-" + r.t, "text-xs font-semibold px-3 py-1 rounded-full")}>{TOOLS[r.t]}</span>
-              <span className={cn("text-[11px] font-semibold uppercase tracking-wider", r.status.cls)} style={{ fontFamily: "'Geist Mono', monospace" }}>{r.status.label}</span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
-              <div>
-                <label className="block text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Cost per user</label>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm text-muted-foreground">$</span>
-                  <input type="number" min={0} step="0.01"
-                    value={vals[r.t] ?? ""}
-                    onChange={e => setVals(prev => ({ ...prev, [r.t]: e.target.value }))}
-                    className="w-24 px-2 py-1.5 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none" />
-                  <button onClick={() => { const v = parseFloat(vals[r.t]); if (!isNaN(v) && v >= 0) onSetCost(r.t, v); }}
-                    disabled={isSaving}
-                    className="text-xs border border-border rounded-sm px-2.5 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">Save</button>
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Active users</div>
-                <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.users}</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Monthly spend</div>
-                <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.perUser > 0 ? money(r.monthlySpend) : "—"}</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Avg grade</div>
-                {r.grade ? <GradeBadge grade={r.grade} className="text-[22px] px-2.5 py-1" /> : <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>—</div>}
-              </div>
-            </div>
-            {r.perUser > 0 && r.users > 0 && r.monthlyValue > 0 && (
-              <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-5 text-xs flex-wrap">
-                <div>
-                  <span className="text-muted-foreground">Est. value saved: </span>
-                  <span className="font-semibold">{money(r.monthlyValue)}/mo</span>
-                </div>
-                {r.roiMultiple !== null && (
-                  <div>
-                    <span className="text-muted-foreground">ROI: </span>
-                    <span className={cn("font-semibold", r.roiMultiple >= 1 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500")}>
-                      {r.roiMultiple.toFixed(1)}× return
-                    </span>
-                  </div>
+        {model.toolRollups.map(r => {
+          const unset = r.paidSeats == null || r.paidSeats === 0;
+          const over = r.paidSeats != null && r.measuredUsers > r.paidSeats;
+          return (
+            <div key={r.tool} className={cn("bg-card border rounded-sm p-4", over ? "border-red-400" : "border-border")}>
+              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                <span className={cn("pill-" + r.tool, "text-xs font-semibold px-3 py-1 rounded-full")}>{r.toolName}</span>
+                {over ? (
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-red-600" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                    {r.measuredUsers} respondents &gt; {r.paidSeats} seats — check for personal accounts
+                  </span>
+                ) : unset ? (
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-600" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                    Enter paid seats
+                  </span>
+                ) : (
+                  <span className={cn("text-[11px] font-semibold uppercase tracking-wider",
+                    r.roi != null && r.roi >= 1 ? "text-emerald-600" : "text-muted-foreground")}
+                    style={{ fontFamily: "'Geist Mono', monospace" }}>
+                    {r.roi != null ? r.roi.toFixed(1) + "× return" : "—"}
+                  </span>
                 )}
-                <span className="text-muted-foreground">({(r.monthlyValue / hourlyRate).toFixed(0)} hrs saved/mo est.)</span>
               </div>
-            )}
-          </div>
-        ))}
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end mb-3">
+                <div>
+                  <label className="block text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Paid seats</label>
+                  <input type="number" min={0} step={1} className={numCls}
+                    value={fieldOf(r.tool, "paidSeats")}
+                    onChange={e => edit(r.tool, "paidSeats", e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Cost per seat</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-muted-foreground">$</span>
+                    <input type="number" min={0} step="0.01" className={numCls}
+                      value={fieldOf(r.tool, "costPerSeat")}
+                      onChange={e => edit(r.tool, "costPerSeat", e.target.value)} />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <button onClick={() => save(r.tool)} disabled={isSaving}
+                    className="text-xs border border-border rounded-sm px-3 py-1.5 hover:border-foreground transition-colors disabled:opacity-50">
+                    {isSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-border/60">
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Measured users</div>
+                  <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{r.measuredUsers}</div>
+                  <div className="text-[10px] text-muted-foreground mt-1">filled out the form</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Unmeasured seats</div>
+                  <div className={cn("text-[22px] leading-none font-medium", (r.unmeasuredSeats ?? 0) > 0 && "text-amber-600")}
+                    style={{ fontFamily: "'Fraunces', serif" }}>{r.unmeasuredSeats ?? "—"}</div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    {r.unmeasuredSpend != null && r.unmeasuredSpend > 0 ? money(r.unmeasuredSpend) + "/mo unaccounted" : "no gap"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Monthly spend</div>
+                  <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>
+                    {r.monthlySpend != null ? money(r.monthlySpend) : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">Value saved</div>
+                  <div className="text-[22px] leading-none font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{money(r.monthlyValue)}</div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    {Math.round(r.monthlyHours)} hrs/mo · {r.hoursPerMeasuredUser.toFixed(1)} per user
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-4 bg-secondary/40 border border-border rounded-sm px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Total monthly spend</span>
-          <span className="text-lg font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>{money(totalSpend)}</span>
+          <span className="text-lg font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>{money(model.totals.monthlySpend)}</span>
         </div>
         <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border/60">
           <span className="text-[11px] uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>Projected yearly spend</span>
-          <span className="text-sm font-medium text-muted-foreground" style={{ fontFamily: "'Fraunces', serif" }}>{money(totalSpend * 12)}</span>
+          <span className="text-sm font-medium text-muted-foreground" style={{ fontFamily: "'Fraunces', serif" }}>{money(model.totals.yearlySpend)}</span>
+        </div>
+        {model.totals.unmeasuredSpend > 0 && (
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border/60">
+            <span className="text-[11px] uppercase tracking-wider text-amber-600" style={{ fontFamily: "'Geist Mono', monospace" }}>Paid for, never reported used</span>
+            <span className="text-sm font-medium text-amber-600" style={{ fontFamily: "'Fraunces', serif" }}>
+              {money(model.totals.unmeasuredSpend)}/mo · {money(model.totals.unmeasuredSpend * 12)}/yr
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 bg-card border border-border rounded-sm p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1" style={{ fontFamily: "'Geist Mono', monospace" }}>Realization sensitivity</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Hours are {HOURS_CAVEAT} — they exclude the time spent prompting and checking the output.
+          Rather than pick one discount, here is the range.
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          {model.realization.map(r => (
+            <div key={r.label} className="border border-border rounded-sm px-3 py-2">
+              <div className="text-[11px] text-muted-foreground uppercase tracking-[0.04em] mb-1">{r.label}</div>
+              <div className="text-base font-medium" style={{ fontFamily: "'Fraunces', serif" }}>{money(r.monthlyValue)}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">
+                {Math.round(r.monthlyHours)} hrs · {r.roi != null ? r.roi.toFixed(1) + "×" : "—"}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+
+      {model.revocations.length > 0 && (
+        <div className="mt-4 bg-card border border-border rounded-sm p-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1" style={{ fontFamily: "'Geist Mono', monospace" }}>
+            Seats to revoke · {money(model.immediateMonthlySavings)}/mo
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Scored under {SEAT_ACTION_BANDS.coach}% on that specific tool — judged per tool, not on the person overall.
+          </p>
+          <div className="divide-y divide-border border border-border rounded-sm">
+            {model.revocations.map(r => (
+              <div key={r.name + r.tool} className="flex items-center justify-between px-3 py-2 gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{r.name}</div>
+                  <div className="text-[11px] text-muted-foreground">{r.team} · {r.tool}</div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm">{r.pct}%</span>
+                  <GradeBadge grade={r.grade} />
+                  <span className="text-xs text-muted-foreground w-14 text-right">
+                    {r.seatCost != null ? money(r.seatCost) + "/mo" : "—"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

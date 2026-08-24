@@ -456,6 +456,24 @@ goes flat again, it fails.
   Changing the numbers is now a one-line edit to `GRADE_BANDS`.
 - **`normalizeName` is not a blanket title-case**, for the reason given above.
 
+### Cost tab now shares the model, with paid seats entered on-screen
+
+The Cost & ROI tab was still counting respondents and using the old flat-hours
+maths, so the screen and the export disagreed. It now reads the same model as
+both outputs.
+
+- **Paid seats and cost per seat are entered directly in the Cost tab.** Only 26
+  of the roster answered the survey, so counting respondents undercounts what we
+  actually pay for — the seat count has to be typed in.
+- Each tool shows measured users, **unmeasured seats**, and what those unused
+  seats cost per month and per year. A tool with more respondents than seats is
+  flagged red, since that means people are on personal accounts.
+- Realization sensitivity and the seats-to-revoke list (with monthly savings) are
+  shown on screen, not just in the export.
+- `tool_costs` is superseded by the `seats` table. The migration copied the
+  existing per-user costs across and the table is still backed up; nothing in the
+  UI reads it any more.
+
 ### Safe to deploy before the migration
 
 `getRoster()` and `getSeats()` fall back to the pre-migration schema rather than
