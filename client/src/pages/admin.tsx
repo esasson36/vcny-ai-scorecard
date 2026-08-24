@@ -4,9 +4,13 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Submission } from "@shared/schema";
 import {
   TOOLS, TOOL_KEYS, LABELS, type ToolKey, type MetricKey,
-  calcScore, pctToGrade, gradeAction, gradeClass,
+  calcScore, pctToGrade, gradeAction, gradeClass, GRADE_LEGEND,
   FEEDBACK_KEYS, FEEDBACK_TOOLS, FEEDBACK_COLOR, CONTINUE_LABELS, type FeedbackKey,
 } from "@/lib/scorecard";
+import {
+  buildReportModel, resolveName, normalizeName, TIME_HOURS, WEEKS_PER_MONTH, HOURS_CAVEAT,
+  METHODOLOGY_NOTES, SEAT_ACTION_BANDS, type RosterEntry, type SeatRecord,
+} from "@/lib/report-model";
 import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
@@ -17,8 +21,9 @@ import * as XLSX from "xlsx";
 // the restore — if this name changes in one place it must change in both.
 const RAW_SHEET = "Raw Data";
 
-// Midpoint hours saved per week for each time-saved score level (0–5)
-const TIME_HOURS = [0, 0.5, 2, 4, 7.5, 12];
+// The person who built the scorecard — excluded from the ranked list and
+// disclosed separately, so their own 20/20 does not sit unmarked in the top 3.
+const SCORECARD_OWNER = "Elie Sasson";
 import { getCoachSuggestions } from "@/lib/scorecard";
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -81,7 +86,8 @@ function isConsecutiveMonth(a: string, b: string): boolean {
 // Consecutive months a person submitted, counting back from their latest submission.
 // e.g. submitted Apr, May, Jun → 3; missed May → streak breaks.
 function computeStreak(name: string, allSubs: Submission[]): number {
-  const months = [...new Set(allSubs.filter(s => s.name === name).map(getMonth))].filter(Boolean).sort();
+  const target = resolveName(name);
+  const months = [...new Set(allSubs.filter(s => resolveName(s.name) === target).map(getMonth))].filter(Boolean).sort();
   if (!months.length) return 0;
   let streak = 1;
   for (let i = months.length - 1; i > 0; i--) {
@@ -182,6 +188,32 @@ export default function AdminPanel({ onLogout }: Props) {
     [subs, selectedMonth]
   );
 
+  // Manual inputs the report is validated against: headcount comes from the
+  // roster and spend from paid seats, never from arithmetic on submissions.
+  const { data: roster = [] } = useQuery<RosterEntry[]>({ queryKey: ["/api/roster"] });
+  const { data: seats = [] } = useQuery<SeatRecord[]>({ queryKey: ["/api/seats"] });
+
+  // Every number in the workbook and the Word report is read from here.
+  const model = useMemo(() => buildReportModel({
+    submissions: filteredSubs, seats, roster, hourlyRate, scorecardOwner: SCORECARD_OWNER,
+  }), [filteredSubs, seats, roster, hourlyRate]);
+
+  const blockingErrors = model.validations.filter(v => v.level === "error");
+
+  /**
+   * Browser equivalent of failing the build. A report that reconciles wrongly is
+   * worse than no report, so a blocking validation stops the export outright.
+   */
+  function passesValidation(): boolean {
+    if (blockingErrors.length === 0) return true;
+    alert(
+      "Export blocked — the report would not reconcile:\n\n" +
+      blockingErrors.map(v => "• " + v.message).join("\n\n") +
+      "\n\nFix these in Settings, then export again."
+    );
+    return false;
+  }
+
   const sorted = [...filteredSubs].sort((a, b) =>
     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
@@ -202,6 +234,7 @@ export default function AdminPanel({ onLogout }: Props) {
   );
 
   function exportExcel() {
+    if (!passesValidation()) return;
     const TM: Record<string, string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
     const wb = XLSX.utils.book_new();
     const suffix = selectedMonth === "all" ? "all" : selectedMonth;
@@ -225,78 +258,124 @@ export default function AdminPanel({ onLogout }: Props) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(subRows), "Submissions");
 
     // ── Sheet 2: Leaderboard ─────────────────────────────────────────────────
-    const lbMap = new Map<string, { name: string; team: string; pcts: number[]; months: Set<string> }>();
+    // Ranked on best tool, never on the cross-tool average: averaging penalises
+    // someone for holding a seat they never use, which is a seat-allocation
+    // problem rather than an adoption one.
+    const monthsBy = new Map<string, Set<string>>();
     filteredSubs.forEach(sub => {
-      const tools = parseTools(sub.tools);
-      const pcts = Object.keys(tools).map(t => calcScore(tools[t]).pct);
-      if (!pcts.length) return;
-      const avg = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
-      const ex = lbMap.get(sub.name);
-      if (ex) { ex.pcts.push(avg); ex.months.add(getMonth(sub)); }
-      else { lbMap.set(sub.name, { name: sub.name, team: sub.team, pcts: [avg], months: new Set([getMonth(sub)]) }); }
+      const n = resolveName(sub.name);
+      if (!monthsBy.has(n)) monthsBy.set(n, new Set());
+      monthsBy.get(n)!.add(getMonth(sub));
     });
-    const lbRankings = [...lbMap.values()]
-      .map(p => ({ ...p, avg: Math.round(p.pcts.reduce((a, b) => a + b, 0) / p.pcts.length) }))
-      .sort((a, b) => b.avg - a.avg);
-    const lbRows: (string | number)[][] = [["Rank", "Name", "Team", "Months", "Avg Score %", "Grade", "Streak"]];
-    lbRankings.forEach((p, i) => {
-      lbRows.push([i + 1, p.name, p.team, p.months.size, p.avg, pctToGrade(p.avg), computeStreak(p.name, subs)]);
+    const lbRows: (string | number)[][] = [["Rank", "Name", "Team", "Best Tool", "Best Tool %",
+      "Grade", "Seats Held", "Unused Seats", "Portfolio Avg % (reference only)", "Months", "Streak"]];
+    model.ranked.forEach((p, i) => {
+      lbRows.push([i + 1, p.name + (p.isOwner ? " (scorecard owner)" : ""), p.team,
+        p.bestTool, p.bestPct, p.grade, p.seatsHeld, p.unusedSeats,
+        p.portfolioAvgPct, monthsBy.get(p.name)?.size ?? 0, computeStreak(p.name, subs)]);
     });
+    lbRows.push([]);
+    lbRows.push(["Grading bands", GRADE_LEGEND]);
+    lbRows.push(["Ranking rule", "Best tool score, descending. Ties break on total allocated hours saved, then alphabetically."]);
+    lbRows.push(["Portfolio Avg", "Shown for reference only. Never ranked on."]);
+    if (model.owner) lbRows.push(["Disclosure", model.owner + " built this scorecard and is excluded from the report leaderboard."]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lbRows), "Leaderboard");
 
     // ── Sheet 3: Teams ───────────────────────────────────────────────────────
-    const teamsMap = new Map<string, { pcts: number[]; toolPcts: Record<string, number[]>; count: number }>();
-    filteredSubs.forEach(sub => {
-      if (!teamsMap.has(sub.team)) teamsMap.set(sub.team, { pcts: [], toolPcts: {}, count: 0 });
-      const td = teamsMap.get(sub.team)!;
-      td.count++;
-      const tools = parseTools(sub.tools);
-      Object.keys(tools).forEach(t => {
-        const p = calcScore(tools[t]).pct;
-        td.pcts.push(p);
-        if (!td.toolPcts[t]) td.toolPcts[t] = [];
-        td.toolPcts[t].push(p);
-      });
-    });
-    const teamRows: (string | number)[][] = [["Team", "Submissions", "Avg Score %", "Grade", "ChatGPT Grade", "Claude Grade", "Perplexity Grade"]];
-    [...teamsMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([team, td]) => {
-      const avg = td.pcts.length ? Math.round(td.pcts.reduce((a, b) => a + b, 0) / td.pcts.length) : 0;
-      teamRows.push([team, td.count, avg, pctToGrade(avg),
-        td.toolPcts.cgt?.length ? pctToGrade(Math.round(td.toolPcts.cgt.reduce((a, b) => a + b, 0) / td.toolPcts.cgt.length)) : "—",
-        td.toolPcts.cla?.length ? pctToGrade(Math.round(td.toolPcts.cla.reduce((a, b) => a + b, 0) / td.toolPcts.cla.length)) : "—",
-        td.toolPcts.per?.length ? pctToGrade(Math.round(td.toolPcts.per.reduce((a, b) => a + b, 0) / td.toolPcts.per.length)) : "—",
-      ]);
+    // Most teams have a single respondent. A grade computed on n=1 reads to a CEO
+    // as a departmental verdict, so it is suppressed rather than displayed.
+    const teamRows: (string | number)[][] = [["Team", "n", "Avg Best-Tool %", "Grade", "Note"]];
+    model.teams.forEach(t => {
+      teamRows.push([t.team, t.n, t.avgPct, t.grade ?? "—",
+        t.meaningful ? "" : `n=${t.n} — not statistically meaningful`]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(teamRows), "Teams");
 
     // ── Sheet 4: Cost & ROI ──────────────────────────────────────────────────
-    const costLatest = allMonths[0] ?? "";
-    const costScope = costLatest ? subs.filter(s => getMonth(s) === costLatest) : subs;
-    const costRows: (string | number)[][] = [["Tool", "Active Users", "Cost/User/Mo", "Monthly Spend",
-      "Yearly Spend", "Avg Grade", "Est. Value Saved/Mo", "ROI Multiple", "Est. Hrs Saved/Mo"]];
-    TOOL_KEYS.forEach(t => {
-      const users = new Set(costScope.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
-      const pcts = costScope.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
-      const timeScores = costScope.filter(s => parseTools(s.tools)[t]).map(s => (parseTools(s.tools)[t].time ?? 0) as number);
-      const avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : null;
-      const perUser = toolCosts[t] ?? 0;
-      const monthlySpend = perUser * users.size;
-      const avgT = timeScores.length ? timeScores.reduce((a, b) => a + b, 0) / timeScores.length : 0;
-      const hrsPerWeek = TIME_HOURS[Math.round(avgT)] ?? 0;
-      const monthlyValue = hrsPerWeek * 4.33 * hourlyRate * users.size;
-      const roi = monthlySpend > 0 && monthlyValue > 0 ? Math.round(monthlyValue / monthlySpend * 10) / 10 : null;
-      costRows.push([TM[t] ?? t, users.size, perUser > 0 ? perUser : "Not set",
-        perUser > 0 ? monthlySpend : "—", perUser > 0 ? monthlySpend * 12 : "—",
-        avg != null ? pctToGrade(avg) : "—",
-        monthlyValue > 0 ? Math.round(monthlyValue) : "—",
-        roi ?? "—",
-        monthlyValue > 0 ? Math.round(monthlyValue / hourlyRate) : "—"]);
+    // Spend is modelled off paid seats, not survey respondents. Unmeasured Spend
+    // is what we pay for seats nobody reported using.
+    const costRows: (string | number)[][] = [["Tool", "Paid Seats", "Measured Users",
+      "Unmeasured Seats", "Cost/Seat/Mo", "Monthly Spend", "Unmeasured Spend",
+      "Hrs Saved/Mo", "Value/Mo", "ROI"]];
+    const unset = (v: number | null) => (v == null ? "Not set" : v);
+    model.toolRollups.forEach(t => {
+      costRows.push([t.toolName, unset(t.paidSeats), t.measuredUsers, unset(t.unmeasuredSeats),
+        unset(t.costPerSeat), unset(t.monthlySpend), unset(t.unmeasuredSpend),
+        Math.round(t.monthlyHours), Math.round(t.monthlyValue),
+        t.roi != null ? Math.round(t.roi * 10) / 10 : "—"]);
     });
-    const totalSpend = TOOL_KEYS.reduce((s, t) => s + (toolCosts[t] ?? 0) * new Set(costScope.filter(sub => parseTools(sub.tools)[t]).map(sub => sub.name.toLowerCase())).size, 0);
-    costRows.push(["", "", "", "", "", "", "", "", ""]);
-    costRows.push(["Total", "", "", totalSpend, totalSpend * 12, "", "", "", ""]);
-    costRows.push([`Hourly rate used: $${hourlyRate}/hr`, "", "", "", "", "", "", "", ""]);
+    costRows.push([]);
+    costRows.push(["Total", "", "", "", "", model.totals.monthlySpend, model.totals.unmeasuredSpend,
+      Math.round(model.totals.monthlyHours), Math.round(model.totals.monthlyValue), ""]);
+    costRows.push(["Yearly spend", model.totals.yearlySpend]);
+    costRows.push([]);
+    costRows.push(["Realization sensitivity", "Self-reported hours are gross — they exclude prompting and verification time."]);
+    costRows.push(["Scenario", "Hrs/Mo", "Value/Mo", "ROI"]);
+    model.realization.forEach(r => {
+      costRows.push([r.label, Math.round(r.monthlyHours), Math.round(r.monthlyValue),
+        r.roi != null ? Math.round(r.roi * 10) / 10 : "—"]);
+    });
+    costRows.push([]);
+    costRows.push(["Named inputs", "", "Notes"]);
+    costRows.push(["Hourly rate", hourlyRate, "Unloaded wage, NOT fully-loaded cost"]);
+    costRows.push(["Weeks per month", WEEKS_PER_MONTH, "Converts weekly hours to monthly"]);
+    costRows.push(["Hours basis", HOURS_CAVEAT, "Applies to every hours and value figure above"]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(costRows), "Cost & ROI");
+
+    // ── Sheet 5: Seat Actions ────────────────────────────────────────────────
+    // Keyed off each tool score individually. Cancelling a seat and coaching a
+    // person are different decisions and need different inputs.
+    const saRows: (string | number)[][] = [["Name", "Team", "Tool", "%", "Grade", "Action", "Seat Cost/Mo"]];
+    model.seatActions.forEach(a => {
+      saRows.push([a.name, a.team, a.tool, a.pct, a.grade, a.action, a.seatCost ?? "Not set"]);
+    });
+    saRows.push([]);
+    saRows.push(["Thresholds", `Keep >= ${SEAT_ACTION_BANDS.keep}% · Keep + coach ${SEAT_ACTION_BANDS.coach}-${SEAT_ACTION_BANDS.keep - 1}% · Revoke seat < ${SEAT_ACTION_BANDS.coach}%`]);
+    saRows.push(["Revocation candidates", model.revocations.length]);
+    saRows.push(["Immediate monthly savings", model.immediateMonthlySavings]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(saRows), "Seat Actions");
+
+    // ── Sheet 6: Unmanaged Accounts ──────────────────────────────────────────
+    // Keyword matches over free text: candidates for review, never conclusions.
+    const uaRows: (string | number)[][] = [["Name", "Team", "Tool Mentioned", "Verbatim Quote", "Reviewed?"]];
+    model.shadowFlags.forEach(f => uaRows.push([f.name, f.team, f.toolMentioned, f.quote, "NO — review before publishing"]));
+    if (model.shadowFlags.length === 0) uaRows.push(["(none detected)", "", "", "", ""]);
+    uaRows.push([]);
+    uaRows.push(["Non-respondents", "Holds a paid seat?", "", "", ""]);
+    model.notSubmitted.forEach(n => uaRows.push([n, "Check admin console", "", "", ""]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(uaRows), "Unmanaged Accounts");
+
+    // ── Sheet 7: Seats (manual input) ────────────────────────────────────────
+    const seatRows: (string | number)[][] = [["Tool", "Paid Seats", "Cost/Seat/Mo", "Billing Owner", "As-of Date", "Source"]];
+    model.toolRollups.forEach(t => {
+      const rec = seats.find(x => x.tool === t.tool);
+      seatRows.push([t.toolName, rec?.paidSeats ?? "Not set", rec?.costPerSeat ?? "Not set",
+        rec?.billingOwner ?? "", rec?.asOf ?? "", rec?.source ?? ""]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(seatRows), "Seats");
+
+    // ── Sheet 8: Roster ──────────────────────────────────────────────────────
+    const rosterRows: (string | number)[][] = [["Full Name", "Email", "Team", "Active", "Submitted?"]];
+    model.roster.forEach(r => rosterRows.push([r.fullName, r.email, r.team, r.active ? "Yes" : "No",
+      model.notSubmitted.includes(r.fullName) ? "No" : "Yes"]));
+    rosterRows.push([]);
+    rosterRows.push(["Roster total", model.counts.rosterTotal]);
+    rosterRows.push(["Submitted", model.counts.uniquePeople]);
+    rosterRows.push(["Not submitted", model.counts.notSubmitted]);
+    rosterRows.push(["Person x tool rows", model.counts.submissionRows]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rosterRows), "Roster");
+
+    // ── Sheet 9: Methodology ─────────────────────────────────────────────────
+    const methRows: (string | number)[][] = [["Methodology & Limitations", ""]];
+    METHODOLOGY_NOTES.forEach(n => methRows.push([n, ""]));
+    methRows.push([]);
+    methRows.push(["Validations at export", ""]);
+    if (model.validations.length === 0) {
+      methRows.push(["OK", "No issues."]);
+    } else {
+      model.validations.forEach(v => methRows.push([v.level.toUpperCase(), v.message]));
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(methRows), "Methodology");
 
     // ── Sheet 5: Product Feedback ─────────────────────────────────────────────
     const fbRows: (string | number)[][] = [["Name", "Team", "Month", "Tool",
@@ -337,6 +416,7 @@ export default function AdminPanel({ onLogout }: Props) {
   }
 
   async function exportReport() {
+    if (!passesValidation()) return;
     setReportBusy(true);
     try {
     const esc = (s: string) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -390,8 +470,12 @@ export default function AdminPanel({ onLogout }: Props) {
     const badge = (g: string, pt = 11) =>
       `<b style="color:${gradeColors[g] || "#111"};font-size:${pt}pt">${g}</b>`;
 
+    // Uppercase the words but leave HTML entities alone: a blanket toUpperCase()
+    // turns "&middot;" into "&MIDDOT;", which some parsers render literally.
+    const upperSafe = (t: string) =>
+      t.replace(/&[a-zA-Z]+;|[\s\S]/g, m => (m.startsWith("&") && m.endsWith(";") ? m : m.toUpperCase()));
     const sectionHead = (label: string) =>
-      `<p style="font-family:Arial,sans-serif;font-size:8pt;color:#999999;border-bottom:1pt solid #cccccc;padding-bottom:3pt;margin:20pt 0 8pt">${label.toUpperCase()}</p>`;
+      `<p style="font-family:Arial,sans-serif;font-size:8pt;color:#999999;border-bottom:1pt solid #cccccc;padding-bottom:3pt;margin:20pt 0 8pt">${upperSafe(label)}</p>`;
 
     // Ask Claude for an executive summary (skipped gracefully if the key isn't set)
     let aiSummary = "";
@@ -444,88 +528,125 @@ export default function AdminPanel({ onLogout }: Props) {
 
 <p style="font-size:8pt;color:#888888;font-family:Arial,sans-serif;margin-bottom:4pt">VCNY &middot; AI SCORECARD</p>
 <p style="font-family:Georgia,serif;font-size:26pt;font-weight:normal;color:#111111;margin-bottom:3pt">Audit Report</p>
-<p style="font-size:10pt;color:#666666;border-bottom:2pt solid #111111;padding-bottom:12pt;margin-bottom:0">Period: ${esc(monthLabel)} &nbsp;&middot;&nbsp; ${filteredSubs.length} submission${filteredSubs.length !== 1 ? "s" : ""} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
+<p style="font-size:10pt;color:#666666;border-bottom:2pt solid #111111;padding-bottom:12pt;margin-bottom:0">Period: ${esc(monthLabel)} &nbsp;&middot;&nbsp; ${model.counts.submissionRows} submission${model.counts.submissionRows !== 1 ? "s" : ""} from ${model.counts.uniquePeople} of ${model.counts.rosterTotal} people &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
 
 ${aiSummary ? `${sectionHead("Executive Summary")}
 <p style="font-size:10.5pt;color:#222222;line-height:1.55;margin-bottom:6pt">${esc(aiSummary)}</p>` : ""}
 
 ${(() => {
-  const ranked = personData.filter(r => r.toolRows.length > 0).sort((a, b) => b.avgPct - a.avgPct);
+  const ranked = model.rankedExcludingOwner;
   if (!ranked.length) return "";
-  const head = `<thead><tr><th style="width:8%">#</th><th style="width:22%">Name</th><th style="width:16%">Team</th><th style="width:34%">Tools</th><th>Grade</th></tr></thead>`;
+  const head = `<thead><tr><th style="width:8%">#</th><th style="width:24%">Name</th><th style="width:16%">Team</th><th style="width:30%">Best Tool</th><th>Grade</th></tr></thead>`;
   const row = (r: typeof ranked[number], rank: number) => `<tr>
       <td style="text-align:center;font-weight:bold;color:#888888">${rank}</td>
-      <td style="font-weight:bold">${esc(r.sub.name)}</td>
-      <td style="color:#666666">${esc(r.sub.team)}</td>
-      <td style="font-size:9pt;color:#555555">${r.toolRows.map(t => `${esc(t.name)} ${badge(t.grade, 9)}`).join(" &nbsp;&middot;&nbsp; ")}</td>
-      <td>${badge(r.overallGrade, 12)} <span style="font-size:9pt;color:#999999">${r.avgPct}%</span></td>
+      <td style="font-weight:bold">${esc(r.name)}</td>
+      <td style="color:#666666">${esc(r.team)}</td>
+      <td style="font-size:9pt;color:#555555">${esc(r.bestTool)} ${badge(r.grade, 9)} <span style="color:#999999">${r.bestPct}%</span>${r.unusedSeats > 0 ? ` <span style="color:#cc7700">&middot; ${r.unusedSeats} unused seat${r.unusedSeats !== 1 ? "s" : ""}</span>` : ""}</td>
+      <td>${badge(r.grade, 12)}</td>
     </tr>`;
+  const note = `<p style="font-size:8.5pt;color:#888888;margin:-6pt 0 12pt">Ranked on each person&rsquo;s strongest tool. Averaging across tools penalises holding a seat someone never uses, which is a seat-allocation finding rather than an adoption one.</p>`;
+  const ownerNote = model.owner
+    ? `<p style="font-size:8.5pt;color:#888888;margin:4pt 0 12pt">${esc(model.owner)} built this scorecard and is excluded from the ranking above.</p>`
+    : "";
   if (ranked.length <= 6) {
-    return `${sectionHead("Leaderboard &middot; " + esc(monthLabel))}
-<table style="margin-bottom:14pt">${head}<tbody>${ranked.map((r, i) => row(r, i + 1)).join("")}</tbody></table>`;
+    return `${sectionHead("Leaderboard &middot; " + esc(monthLabel))}${note}
+<table style="margin-bottom:14pt">${head}<tbody>${ranked.map((r, i) => row(r, i + 1)).join("")}</tbody></table>${ownerNote}`;
   }
   const top = ranked.slice(0, 3);
   const bottom = ranked.slice(-3);
   const bottomStart = ranked.length - 2;
-  return `${sectionHead("Top 3 &middot; " + esc(monthLabel))}
+  return `${sectionHead("Top 3 &middot; " + esc(monthLabel))}${note}
 <table style="margin-bottom:14pt">${head}<tbody>${top.map((r, i) => row(r, i + 1)).join("")}</tbody></table>
 ${sectionHead("Bottom 3")}
-<table style="margin-bottom:14pt">${head}<tbody>${bottom.map((r, i) => row(r, bottomStart + i)).join("")}</tbody></table>`;
+<table style="margin-bottom:14pt">${head}<tbody>${bottom.map((r, i) => row(r, bottomStart + i)).join("")}</tbody></table>${ownerNote}`;
 })()}
 
-${sectionHead("Not Yet Submitted" + (employees.length > 0 ? " &middot; " + missing.length + " of " + employees.length : ""))}
-${missing.length > 0
-  ? `<p style="font-size:10pt">${missing.map(e=>`<span style="color:#cc2222">${esc(e.name)}</span>${e.team ? ` <span style="color:#aaaaaa">(${esc(e.team)})</span>` : ""}`).join(" &nbsp;&middot;&nbsp; ")}</p>`
-  : `<p style="color:#16a34a;font-size:10pt">All employees have submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
+${sectionHead("Not Yet Submitted &middot; " + model.counts.notSubmitted + " of " + model.counts.rosterTotal)}
+${model.notSubmitted.length > 0
+  ? `<p style="font-size:10pt">${model.notSubmitted.map(n=>`<span style="color:#cc2222">${esc(n)}</span>`).join(" &nbsp;&middot;&nbsp; ")}</p>`
+  : `<p style="color:#16a34a;font-size:10pt">Everyone on the roster has submitted${selectedMonth !== "all" ? ` for ${esc(monthLabel)}` : ""}.</p>`}
 
 ${(() => {
-  const hasCosts = Object.values(toolCosts).some(v => v > 0);
-  if (!hasCosts) return "";
-  const latestM = allMonths[0] ?? "";
-  const cs = latestM ? subs.filter(s => getMonth(s) === latestM) : subs;
-  const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  const cRows = TOOL_KEYS.map(t => {
-    const tm: Record<string,string> = { cgt: "ChatGPT", cla: "Claude", per: "Perplexity" };
-    const users = new Set(cs.filter(s => parseTools(s.tools)[t]).map(s => s.name.toLowerCase().trim()));
-    const pcts = cs.flatMap(s => { const tt = parseTools(s.tools)[t]; return tt ? [calcScore(tt).pct] : []; });
-    const timeScores = cs.filter(s => parseTools(s.tools)[t]).map(s => (parseTools(s.tools)[t].time ?? 0) as number);
-    const avg = pcts.length ? Math.round(pcts.reduce((a,b)=>a+b,0)/pcts.length) : null;
-    const grade = avg != null ? pctToGrade(avg) : null;
-    const perUser = toolCosts[t] ?? 0;
-    if (!perUser) return null;
-    const monthlySpend = perUser * users.size;
-    const avgT = timeScores.length ? timeScores.reduce((a,b)=>a+b,0)/timeScores.length : 0;
-    const hrsWk = TIME_HOURS[Math.round(avgT)] ?? 0;
-    const monthlyValue = hrsWk * 4.33 * hourlyRate * users.size;
-    const roi = monthlySpend > 0 && monthlyValue > 0 ? Math.round(monthlyValue/monthlySpend*10)/10 : null;
-    return { name: tm[t]??t, users: users.size, grade, perUser, monthlySpend, monthlyValue, roi };
-  }).filter(Boolean) as { name:string;users:number;grade:string|null;perUser:number;monthlySpend:number;monthlyValue:number;roi:number|null }[];
-  if (!cRows.length) return "";
-  const total = cRows.reduce((s,r)=>s+r.monthlySpend,0);
-  return `${sectionHead("Cost &amp; ROI &middot; " + esc(latestM ? fmtMonth(latestM) : "Latest Month"))}
-<p style="font-size:9pt;color:#888888;margin-bottom:8pt">Based on $${hourlyRate}/hr avg hourly rate · estimated value of time saved</p>
-<table style="margin-bottom:14pt">
+  // CH-06 — the strongest finding in the dataset, placed above Cost & ROI.
+  if (!model.shadowFlags.length && !model.notSubmitted.length) return "";
+  const flags = model.shadowFlags.map(f => `<tr>
+      <td style="font-weight:bold">${esc(f.name)}</td>
+      <td style="color:#666666">${esc(f.team)}</td>
+      <td style="color:#cc2222;font-weight:bold">${esc(f.toolMentioned)}</td>
+      <td style="font-size:9pt;color:#555555">${esc(f.quote.slice(0, 240))}${f.quote.length > 240 ? "&hellip;" : ""}</td>
+    </tr>`).join("");
+  return `${sectionHead("Unmanaged Accounts")}
+<p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">Company work running through personal AI accounts: no admin visibility, no retention policy, no offboarding path. Found by keyword match over free-text answers &mdash; <b>confirm each with the person before acting</b>.</p>
+${flags ? `<table style="margin-bottom:12pt"><thead><tr><th style="width:18%">Name</th><th style="width:14%">Team</th><th style="width:14%">Tool</th><th>Verbatim</th></tr></thead><tbody>${flags}</tbody></table>` : `<p style="font-size:10pt;color:#16a34a">No personal-account mentions detected in free text.</p>`}
+${model.notSubmitted.length ? `<p style="font-size:9pt;color:#666666;margin-top:8pt"><b>${model.notSubmitted.length} non-respondents</b> may also hold paid seats that were never measured: ${model.notSubmitted.map(n=>esc(n)).join(" &nbsp;&middot;&nbsp; ")}. Reconcile against the subscription admin console.</p>` : ""}`;
+})()}
+
+${(() => {
+  const rollups = model.toolRollups.filter(t => t.paidSeats != null);
+  if (!rollups.length) return "";
+  const money = (n: number) => "$" + Math.round(n).toLocaleString();
+  return `${sectionHead("Cost &amp; ROI &middot; " + esc(monthLabel))}
+<p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">Spend is modelled from paid seats, not survey respondents. Hours saved are ${HOURS_CAVEAT}, valued at $${hourlyRate}/hr (unloaded wage, not fully-loaded cost).</p>
+<table style="margin-bottom:10pt">
   <thead><tr>
-    <th>Tool</th><th>Active Users</th><th>Cost/User</th><th>Monthly Spend</th><th>Avg Grade</th><th>Est. Value Saved</th><th>ROI</th>
+    <th>Tool</th><th>Paid Seats</th><th>Measured</th><th>Unmeasured</th><th>Monthly Spend</th><th>Unmeasured Spend</th><th>Hrs/Mo</th><th>Value/Mo</th><th>ROI</th>
   </tr></thead>
   <tbody>
-    ${cRows.map(r=>`<tr>
-      <td style="font-weight:bold">${esc(r.name)}</td>
-      <td style="text-align:center">${r.users}</td>
-      <td>${money(r.perUser)}</td>
-      <td>${money(r.monthlySpend)}</td>
-      <td style="text-align:center">${r.grade ? badge(r.grade,10) : "—"}</td>
-      <td>${r.monthlyValue>0?money(r.monthlyValue):"—"}</td>
-      <td style="font-weight:bold;color:${r.roi&&r.roi>=1?"#16a34a":"#dc2626"}">${r.roi?r.roi.toFixed(1)+"×":"—"}</td>
+    ${rollups.map(r=>`<tr>
+      <td style="font-weight:bold">${esc(r.toolName)}</td>
+      <td style="text-align:center">${r.paidSeats}</td>
+      <td style="text-align:center">${r.measuredUsers}</td>
+      <td style="text-align:center;color:${(r.unmeasuredSeats ?? 0) > 0 ? "#cc7700" : "#666666"};font-weight:bold">${r.unmeasuredSeats}</td>
+      <td>${money(r.monthlySpend ?? 0)}</td>
+      <td style="color:${(r.unmeasuredSpend ?? 0) > 0 ? "#cc2222" : "#666666"}">${money(r.unmeasuredSpend ?? 0)}</td>
+      <td style="text-align:center">${Math.round(r.monthlyHours)}</td>
+      <td>${money(r.monthlyValue)}</td>
+      <td style="font-weight:bold">${r.roi != null ? r.roi.toFixed(1)+"&times;" : "&mdash;"}</td>
     </tr>`).join("")}
     <tr style="background:#f5f5f5;border-top:1pt solid #cccccc">
-      <td colspan="3" style="font-weight:bold">Total monthly</td>
-      <td style="font-weight:bold">${money(total)}</td>
-      <td colspan="3" style="color:#888888;font-size:9pt">${money(total*12)}/yr projected</td>
+      <td colspan="4" style="font-weight:bold">Total monthly</td>
+      <td style="font-weight:bold">${money(model.totals.monthlySpend)}</td>
+      <td style="font-weight:bold;color:#cc2222">${money(model.totals.unmeasuredSpend)}</td>
+      <td style="text-align:center;font-weight:bold">${Math.round(model.totals.monthlyHours)}</td>
+      <td style="font-weight:bold">${money(model.totals.monthlyValue)}</td>
+      <td style="color:#888888;font-size:9pt">${money(model.totals.yearlySpend)}/yr</td>
     </tr>
   </tbody>
-</table>`;
+</table>
+
+<p style="font-size:8.5pt;color:#888888;margin:12pt 0 6pt"><b>Realization sensitivity.</b> Self-reported hours are gross &mdash; they exclude prompting and verification time. Two respondents flagged verification overhead explicitly, so the range below is published instead of a single haircut.</p>
+<table style="margin-bottom:12pt">
+  <thead><tr><th>Scenario</th><th>Hrs/Mo</th><th>Value/Mo</th><th>ROI</th></tr></thead>
+  <tbody>${model.realization.map(r=>`<tr>
+      <td>${esc(r.label)}</td>
+      <td style="text-align:center">${Math.round(r.monthlyHours)}</td>
+      <td>${money(r.monthlyValue)}</td>
+      <td style="font-weight:bold">${r.roi != null ? r.roi.toFixed(1)+"&times;" : "&mdash;"}</td>
+    </tr>`).join("")}</tbody>
+</table>
+
+${model.revocations.length ? `${sectionHead("Seats To Revoke")}
+<p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">Scored below ${SEAT_ACTION_BANDS.coach}% on that specific tool. Keyed off the individual tool score, not the person&rsquo;s overall grade.</p>
+<table style="margin-bottom:8pt">
+  <thead><tr><th style="width:26%">Name</th><th style="width:18%">Team</th><th style="width:18%">Tool</th><th style="width:12%">Score</th><th>Seat Cost/Mo</th></tr></thead>
+  <tbody>${model.revocations.map(r=>`<tr>
+      <td style="font-weight:bold">${esc(r.name)}</td>
+      <td style="color:#666666">${esc(r.team)}</td>
+      <td>${esc(r.tool)}</td>
+      <td style="text-align:center">${r.pct}% ${badge(r.grade, 9)}</td>
+      <td>${r.seatCost != null ? money(r.seatCost) : "&mdash;"}</td>
+    </tr>`).join("")}
+    <tr style="background:#f5f5f5;border-top:1pt solid #cccccc">
+      <td colspan="4" style="font-weight:bold">Immediate monthly savings</td>
+      <td style="font-weight:bold;color:#16a34a">${money(model.immediateMonthlySavings)}</td>
+    </tr>
+  </tbody>
+</table>` : ""}`;
 })()}
+
+${sectionHead("Methodology &amp; Limitations")}
+<p style="font-size:8.5pt;color:#666666;line-height:1.5">${METHODOLOGY_NOTES.map(n=>esc(n)).join("<br>")}</p>
+<p style="font-size:8.5pt;color:#666666;line-height:1.5;margin-top:6pt">Grading bands: ${esc(GRADE_LEGEND)}.</p>
 
 <p style="margin-top:36pt;padding-top:8pt;border-top:1pt solid #dddddd;font-size:8pt;color:#aaaaaa;text-align:center">VCNY AI Scorecard &nbsp;&middot;&nbsp; ${esc(monthLabel)} &nbsp;&middot;&nbsp; Generated ${esc(dateStr)}</p>
 </div>
@@ -2736,6 +2857,201 @@ function BackupRestore() {
   );
 }
 
+/**
+ * Seats and Roster — the two manual inputs the report is validated against.
+ *
+ * Both exist because the August report derived them from the survey: spend was
+ * costed off respondents rather than paid seats, and headcount was arithmetic on
+ * submissions, which is how "11 OF 22" reached the CEO. Neither number can be
+ * inferred from the data, so both are entered here and reconciled to source.
+ */
+function ReportInputs() {
+  const qc = useQueryClient();
+  const { data: seats = [] } = useQuery<SeatRecord[]>({ queryKey: ["/api/seats"] });
+  const { data: roster = [] } = useQuery<RosterEntry[]>({ queryKey: ["/api/roster"] });
+  const { data: subs = [] } = useQuery<Submission[]>({ queryKey: ["/api/submissions"] });
+  const [draft, setDraft] = useState<Record<string, Partial<SeatRecord>>>({});
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newTeam, setNewTeam] = useState("");
+  const [note, setNote] = useState("");
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["/api/seats"] });
+    qc.invalidateQueries({ queryKey: ["/api/roster"] });
+  };
+
+  const saveSeat = useMutation({
+    mutationFn: async (s: SeatRecord) => { await apiRequest("POST", "/api/seats", s); },
+    onSuccess: refresh,
+  });
+  const saveRoster = useMutation({
+    mutationFn: async (e: RosterEntry) => { await apiRequest("POST", "/api/roster", e); },
+    onSuccess: refresh,
+  });
+  const removeRoster = useMutation({
+    mutationFn: async (name: string) => { await apiRequest("DELETE", `/api/roster/${encodeURIComponent(name)}`); },
+    onSuccess: refresh,
+  });
+
+  const value = (tool: string, field: keyof SeatRecord, fallback: unknown) => {
+    const d = draft[tool]?.[field];
+    if (d !== undefined) return d as string | number;
+    const rec = seats.find(s => s.tool === tool);
+    return (rec?.[field] as string | number | undefined) ?? (fallback as string | number);
+  };
+  const edit = (tool: string, field: keyof SeatRecord, v: string | number) =>
+    setDraft(d => ({ ...d, [tool]: { ...d[tool], [field]: v } }));
+
+  function commit(tool: ToolKey) {
+    const rec = seats.find(s => s.tool === tool);
+    saveSeat.mutate({
+      tool,
+      paidSeats: Number(value(tool, "paidSeats", rec?.paidSeats ?? 0)) || 0,
+      costPerSeat: Number(value(tool, "costPerSeat", rec?.costPerSeat ?? 0)) || 0,
+      billingOwner: String(value(tool, "billingOwner", "")),
+      asOf: String(value(tool, "asOf", "")),
+      source: String(value(tool, "source", "")),
+    });
+    setDraft(d => ({ ...d, [tool]: {} }));
+  }
+
+  // Submitted names missing from the roster block every export, so offer a
+  // one-click way to add them rather than making it a 26-row typing exercise.
+  const rosterNames = new Set(roster.map(r => normalizeName(r.fullName)));
+  const missingFromRoster = [...new Set(subs.map(s => resolveName(s.name)))]
+    .filter(n => !rosterNames.has(n)).sort();
+
+  async function importSubmitters() {
+    for (const fullName of missingFromRoster) {
+      await apiRequest("POST", "/api/roster", { fullName, email: "", team: "", active: true });
+    }
+    setNote(`Added ${missingFromRoster.length} name(s) to the roster.`);
+    refresh();
+  }
+
+  const inputCls = "border border-border rounded-sm px-2 py-1 text-sm w-full bg-background";
+  const btnCls = "text-[11px] uppercase tracking-[0.08em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors disabled:opacity-50";
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-6">
+      <h2 className="text-base font-semibold mb-1">Report inputs</h2>
+      <p className="text-xs text-muted-foreground mb-5">
+        Paid seats and the roster cannot be inferred from the survey. The report is
+        validated against both and will refuse to export while either is missing.
+      </p>
+
+      {note && <div className="mb-4 px-3 py-2 rounded-sm bg-green-50 border border-green-200 text-green-700 text-sm">{note}</div>}
+
+      <h3 className="text-sm font-medium mb-1">Paid seats</h3>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        Reconcile against the subscription admin console — not the number of people who replied.
+      </p>
+      <div className="space-y-3 mb-6">
+        {TOOL_KEYS.map(t => {
+          const rec = seats.find(s => s.tool === t);
+          const unset = !rec || rec.paidSeats === 0;
+          return (
+            <div key={t} className={`border rounded-sm p-3 ${unset ? "border-red-300" : "border-border"}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">{TOOLS[t]}</span>
+                {unset && <span className="text-[11px] text-red-600">Paid seats not set</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <label className="text-[11px] text-muted-foreground">
+                  Paid seats
+                  <input type="number" min={0} className={inputCls}
+                    value={value(t, "paidSeats", 0)}
+                    onChange={e => edit(t, "paidSeats", e.target.value)} />
+                </label>
+                <label className="text-[11px] text-muted-foreground">
+                  Cost / seat / mo
+                  <input type="number" min={0} step="0.01" className={inputCls}
+                    value={value(t, "costPerSeat", 0)}
+                    onChange={e => edit(t, "costPerSeat", e.target.value)} />
+                </label>
+                <label className="text-[11px] text-muted-foreground">
+                  Billing owner
+                  <input className={inputCls} value={value(t, "billingOwner", "")}
+                    onChange={e => edit(t, "billingOwner", e.target.value)} />
+                </label>
+                <label className="text-[11px] text-muted-foreground">
+                  As-of date
+                  <input placeholder="2026-08-24" className={inputCls} value={value(t, "asOf", "")}
+                    onChange={e => edit(t, "asOf", e.target.value)} />
+                </label>
+              </div>
+              <label className="text-[11px] text-muted-foreground block mb-2">
+                Source
+                <input placeholder="admin console export 2026-08-24" className={inputCls}
+                  value={value(t, "source", "")} onChange={e => edit(t, "source", e.target.value)} />
+              </label>
+              <button onClick={() => commit(t)} disabled={saveSeat.isPending} className={btnCls}
+                style={{ fontFamily: "'Geist Mono', monospace" }}>
+                {saveSeat.isPending ? "Saving…" : "Save"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <h3 className="text-sm font-medium mb-1">Roster</h3>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        The single source of truth for headcount. {roster.length} active.
+      </p>
+
+      {missingFromRoster.length > 0 && (
+        <div className="mb-3 px-3 py-2 rounded-sm bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+          {missingFromRoster.length} person/people submitted but are not on the roster, which blocks export:
+          <span className="font-medium"> {missingFromRoster.join(", ")}</span>
+          <button onClick={importSubmitters}
+            className="mt-2 block text-[11px] uppercase tracking-[0.08em] border border-amber-400 px-2 py-1 rounded-sm hover:bg-amber-100">
+            Add them to the roster
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 mb-3">
+        <input placeholder="Full name" className={inputCls + " flex-1 min-w-[8rem]"} value={newName}
+          onChange={e => setNewName(e.target.value)} />
+        <input placeholder="Email" className={inputCls + " flex-1 min-w-[8rem]"} value={newEmail}
+          onChange={e => setNewEmail(e.target.value)} />
+        <input placeholder="Team" className={inputCls + " w-28"} value={newTeam}
+          onChange={e => setNewTeam(e.target.value)} />
+        <button
+          onClick={() => {
+            if (!newName.trim()) return;
+            saveRoster.mutate({ fullName: newName, email: newEmail, team: newTeam, active: true });
+            setNewName(""); setNewEmail(""); setNewTeam("");
+          }}
+          disabled={saveRoster.isPending} className={btnCls} style={{ fontFamily: "'Geist Mono', monospace" }}>
+          Add
+        </button>
+      </div>
+
+      {roster.length > 0 && (
+        <div className="divide-y divide-border border border-border rounded-sm max-h-64 overflow-y-auto">
+          {roster.map(r => (
+            <div key={r.fullName} className="flex items-center justify-between px-3 py-1.5 gap-2">
+              <div className="min-w-0">
+                <div className="text-sm truncate">{r.fullName}</div>
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {[r.team, r.email].filter(Boolean).join(" · ") || "—"}
+                </div>
+              </div>
+              <button onClick={() => removeRoster.mutate(r.fullName)} disabled={removeRoster.isPending}
+                title="Remove from roster"
+                className="text-xs border border-border rounded-sm px-2 py-1 hover:border-foreground transition-colors disabled:opacity-50 shrink-0">
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsView() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -2781,7 +3097,8 @@ function SettingsView() {
   }
 
   return (
-    <div className="max-w-md space-y-4">
+    <div className="max-w-2xl space-y-4">
+      <ReportInputs />
       <BackupRestore />
       <RecentlyDeleted />
 

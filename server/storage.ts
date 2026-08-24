@@ -45,6 +45,15 @@ function toSubmission(r: Row): Submission {
   };
 }
 
+export interface SeatRow {
+  tool: string;
+  paidSeats: number;
+  costPerSeat: number;
+  billingOwner: string;
+  asOf: string;
+  source: string;
+}
+
 export interface IStorage {
   getAllSubmissions(): Promise<Submission[]>;
   getSubmission(id: string): Promise<Submission | undefined>;
@@ -63,6 +72,11 @@ export interface IStorage {
   getHeadcounts(): Promise<Record<string, number>>;
   setHeadcount(team: string, count: number): Promise<void>;
   getEmployees(): Promise<{ name: string; team: string }[]>;
+  getRoster(): Promise<{ fullName: string; email: string; team: string; active: boolean }[]>;
+  upsertRosterEntry(e: { fullName: string; email: string; team: string; active: boolean }): Promise<void>;
+  deleteRosterEntry(fullName: string): Promise<boolean>;
+  getSeats(): Promise<SeatRow[]>;
+  setSeat(s: SeatRow): Promise<void>;
   getDistinctTeams(): Promise<string[]>;
   getToolCosts(): Promise<Record<string, number>>;
   setToolCost(tool: string, monthlyCost: number): Promise<void>;
@@ -266,6 +280,66 @@ export const storage: IStorage = {
       seen.add(key);
       return true;
     });
+  },
+
+  // ── Roster (CH-05) ────────────────────────────────────────────────────
+  // Headcount comes from here and nowhere else. Deriving it by arithmetic on
+  // submissions is what produced the "11 OF 22" line in the August report.
+  async getRoster(): Promise<{ fullName: string; email: string; team: string; active: boolean }[]> {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("name, email, team, active")
+      .order("name");
+    if (error) throw error;
+    return ((data as { name: string; email: string | null; team: string | null; active: boolean | null }[]) ?? [])
+      .map(r => ({
+        fullName: r.name,
+        email: r.email ?? "",
+        team: r.team ?? "",
+        active: r.active !== false,
+      }));
+  },
+
+  async upsertRosterEntry(e: { fullName: string; email: string; team: string; active: boolean }): Promise<void> {
+    const { error } = await supabase
+      .from("employees")
+      .upsert({ name: e.fullName, email: e.email, team: e.team, active: e.active }, { onConflict: "name" });
+    if (error) throw error;
+  },
+
+  async deleteRosterEntry(fullName: string): Promise<boolean> {
+    const { error, count } = await supabase
+      .from("employees")
+      .delete({ count: "exact" })
+      .eq("name", fullName);
+    if (error) throw error;
+    return (count ?? 0) > 0;
+  },
+
+  // ── Seats (CH-02) ─────────────────────────────────────────────────────
+  async getSeats(): Promise<SeatRow[]> {
+    const { data, error } = await supabase.from("seats").select("*");
+    if (error) throw error;
+    return ((data as Record<string, unknown>[]) ?? []).map(r => ({
+      tool: String(r.tool),
+      paidSeats: Number(r.paid_seats ?? 0),
+      costPerSeat: Number(r.cost_per_seat ?? 0),
+      billingOwner: String(r.billing_owner ?? ""),
+      asOf: String(r.as_of ?? ""),
+      source: String(r.source ?? ""),
+    }));
+  },
+
+  async setSeat(s: SeatRow): Promise<void> {
+    const { error } = await supabase.from("seats").upsert({
+      tool: s.tool,
+      paid_seats: s.paidSeats,
+      cost_per_seat: s.costPerSeat,
+      billing_owner: s.billingOwner,
+      as_of: s.asOf,
+      source: s.source,
+    }, { onConflict: "tool" });
+    if (error) throw error;
   },
 
   async getDistinctTeams(): Promise<string[]> {

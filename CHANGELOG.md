@@ -351,6 +351,125 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-08-24 — Report rebuilt around a single model (CH-01 … CH-11)
+
+The August workbook and audit report were patched into shape each month, which
+meant every defect regenerated in September. All of the below lands in the
+**generator**, not the output files. Every number in both outputs is now read
+from one module, `client/src/lib/report-model.ts`, so the workbook and the Word
+report cannot disagree and a fix lands in both at once.
+
+### The ROI model was measuring price, not usage (CH-01, CH-02)
+
+`Est. Hrs Saved/Mo ÷ Active Users` came out to **17.32 for all three tools**. The
+only thing separating Perplexity's multiple from the others was its $40 price —
+the ROI column was an inverted price tag.
+
+- Reported time buckets now map to weekly-hour midpoints and are **deduplicated**:
+  nine people claimed the same saved hours against 2–3 tools, inflating the total
+  by 35% (890 vs 671 hrs/mo). Each person is capped at their single highest claim,
+  split across their tools in proportion to what they claimed.
+- Hours per user is now **20.51 / 15.42 / 7.02**, not a flat constant.
+- Spend is modelled from **paid seats**, not survey respondents. New columns:
+  Paid Seats, Measured Users, Unmeasured Seats, Unmeasured Spend — the last being
+  what we pay for seats nobody reported using.
+- Hourly rate and weeks-per-month became named inputs, labelled **unloaded wage,
+  not fully-loaded cost**. A **realization sensitivity** table shows ROI at 100%,
+  70%, and 50% of claimed hours rather than inventing one haircut number.
+- Every hours and value figure now carries "self-reported, gross, unvalidated".
+
+### A power user was being reported to the CEO as the worst adopter (CH-03, CH-04)
+
+Averaging a person's score across tools penalised them for holding seats they
+never used. **Alina Soler ranked 26th of 26 and appeared in the report's Bottom 3
+despite scoring 90% on ChatGPT** — she was last only because she also held unused
+Claude (30%) and Perplexity (20%) seats.
+
+- The leaderboard now ranks on **best tool**. Alina moves 26th → 7th. Ties break
+  on total allocated hours saved, then alphabetically; the rule is printed on the
+  sheet. `Portfolio Avg %` is kept as a labelled reference column, never ranked on.
+- New **Seat Actions** sheet keyed off each tool's own score: Keep (≥65%),
+  Keep + coach (50–64%), Revoke seat (<50%). Four revocation candidates fall out,
+  summed into an "immediate monthly savings" figure. Coaching keys off best-tool
+  score only, so nobody lands on both lists for the same reason.
+
+### Counts on page 1 were wrong (CH-05)
+
+The report header read `NOT YET SUBMITTED · 11 OF 22` — 26 people had submitted,
+and "22" appeared nowhere in the data.
+
+- New **Roster** (name, email, team, active) is the single source of truth for
+  headcount. The header now reads "X submissions from Y of Z people", three
+  distinct numbers all sourced from the roster.
+- Names are normalised on ingest, and a `NAME_ALIASES` map resolves "Kvelums" to
+  "Jackie Kvelums" (previously counted as both a submitter and a non-submitter).
+  Normalisation capitalises only all-lowercase words, so "thomas lucio" is fixed
+  without turning "Danielle DeLavan" into "Danielle Delavan".
+- **Export is blocked** when a submitted name doesn't resolve against the roster,
+  with the unmatched names listed. Settings offers one click to add them.
+
+### Unmanaged accounts — the finding that wasn't in the report (CH-06)
+
+Two people described running company work through personal AI accounts, one of
+whom didn't know a company account existed. Contract review and royalty-term
+extraction are running through these tools.
+
+- New **Unmanaged Accounts** section, placed above Cost & ROI, listing name, team,
+  tool, and the verbatim quote, paired with the non-respondent list.
+- Matches are **flagged for human review, never auto-classified** — keyword
+  matching produced a real false positive in testing (a request for a tool, not
+  current use of one).
+
+### Credibility cleanup (CH-07, CH-08, CH-10, CH-11)
+
+- **Team grades suppressed where n < 3.** Eleven of fourteen teams have a single
+  respondent; "Marketing = D" was one person. Only Design (7), Merchandising (5),
+  and Sales (3) now carry a published grade; the rest show `n=1 — not
+  statistically meaningful`.
+- **Grade bands defined once** in `GRADE_BANDS`, applied identically at row,
+  person, and team level, with a visible legend. See the note below on CH-08.
+- **Scorecard owner disclosed** and excluded from the ranked list.
+- **`&MIDDOT;` / `&AMP;` fixed.** The cause was `sectionHead` calling
+  `.toUpperCase()` on the whole label, which uppercased the HTML entities too.
+  Uppercasing now skips entities.
+- **Methodology & Limitations** block added to both outputs, stating what the
+  score does and does not measure (CH-09 — documented, scoring unchanged so
+  month-over-month comparability survives).
+
+### Verification suite
+
+`npm run verify` runs all twelve assertions from the spec against a real exported
+workbook. Assertion 9 is the regression test for CH-01: if hours-per-user ever
+goes flat again, it fails.
+
+### Two deviations from the spec, both deliberate
+
+- **CH-08 grade bands left unchanged.** The spec inferred the bands as
+  `A ≥80, B 65–79, C 50–64, D 40–49, F <40` and cited Maria Ingles (48% = C) next
+  to Alina Soler (47% = D) as evidence of an inconsistent boundary. The actual
+  bands in the code are `A ≥80, B ≥64, C ≥48, D ≥32, F <32` — under which both
+  gradings are correct and consistent, so there was no boundary bug. Adopting the
+  suggested bands would have changed exactly one person's grade, demoting Maria
+  Ingles from C to D, and would have broken the month-over-month comparability
+  CH-09 asks us to preserve. The *requirement* of CH-08 — one definition, applied
+  everywhere, with a visible legend and a documented tiebreak — is implemented.
+  Changing the numbers is now a one-line edit to `GRADE_BANDS`.
+- **`normalizeName` is not a blanket title-case**, for the reason given above.
+
+### Migration required
+
+`migrations/add-seats-and-roster.sql` — creates the `seats` table and adds
+`email` / `active` to `employees`. Run it **before** deploying. Paid seats seed to
+0 on purpose: 0 is visibly unset and trips validation, whereas a guessed number
+would ship as if it had been reconciled.
+
+### Also
+
+- `tsconfig.json` had no `target`, so `tsc` assumed ES5 and reported 27 spurious
+  `downlevelIteration` errors — `npm run check` had never passed. Setting
+  `target: ES2020` brings it to **zero errors**.
+- Backups now include the roster and seats alongside submissions.
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |

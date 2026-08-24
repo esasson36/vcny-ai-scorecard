@@ -52,11 +52,35 @@ export function calcScore(scores: ToolScores): { total: number; max: number; pct
   return { total, max, pct: Math.round((total / max) * 100) };
 }
 
+/**
+ * Grade bands, defined exactly once (CH-08).
+ *
+ * pctToGrade is the ONLY grading function in the codebase and is applied
+ * identically at row, person, and team level, so the same percentage can never
+ * grade differently depending on where it is displayed.
+ *
+ * These thresholds are deliberately unchanged from previous months. Moving them
+ * would re-grade historic data and break month-over-month comparability, which
+ * is the one thing CH-09 asks us not to do this cycle.
+ */
+export const GRADE_BANDS = [
+  { min: 80, grade: "A" },
+  { min: 64, grade: "B" },
+  { min: 48, grade: "C" },
+  { min: 32, grade: "D" },
+  { min: 0,  grade: "F" },
+] as const;
+
+/** Human-readable band list, shown on the Leaderboard sheet and in the report. */
+export const GRADE_LEGEND = GRADE_BANDS.map((b, i) => {
+  const upper = i === 0 ? "" : `–${GRADE_BANDS[i - 1].min - 1}%`;
+  return i === 0
+    ? `${b.grade} ≥${b.min}%`
+    : b.min === 0 ? `${b.grade} <${GRADE_BANDS[i - 1].min}%` : `${b.grade} ${b.min}${upper}`;
+}).join(" · ");
+
 export function pctToGrade(p: number): string {
-  if (p >= 80) return "A";
-  if (p >= 64) return "B";
-  if (p >= 48) return "C";
-  if (p >= 32) return "D";
+  for (const b of GRADE_BANDS) if (p >= b.min) return b.grade;
   return "F";
 }
 

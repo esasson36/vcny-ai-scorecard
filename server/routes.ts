@@ -199,11 +199,13 @@ export function registerRoutes(httpServer: Server, app: Express) {
   // A full snapshot of everything the app owns. Downloaded as .xlsx or .json
   // so there's always an off-database copy — Supabase's free tier has no backups.
   app.get("/api/backup", requireAdmin, async (_req, res) => {
-    const [submissions, headcounts, toolCosts, employees] = await Promise.all([
+    const [submissions, headcounts, toolCosts, employees, roster, seats] = await Promise.all([
       storage.getRawSubmissions(),
       storage.getHeadcounts(),
       storage.getToolCosts(),
       storage.getEmployees(),
+      storage.getRoster(),
+      storage.getSeats(),
     ]);
     res.json({
       version: 1,
@@ -216,6 +218,8 @@ export function registerRoutes(httpServer: Server, app: Express) {
       headcounts,
       toolCosts,
       employees,
+      roster,
+      seats,
     });
   });
 
@@ -267,6 +271,54 @@ export function registerRoutes(httpServer: Server, app: Express) {
   // ── Employees (admin only) ──────────────────────────────────────────
   app.get("/api/employees", requireAdmin, async (_req, res) => {
     res.json(await storage.getEmployees());
+  });
+
+  // ── Roster & seats (admin only) ──────────────────────────────────────
+  // Both are manual inputs the report model validates against. Headcount comes
+  // from the roster; spend comes from paid seats. Neither is derived from the survey.
+  app.get("/api/roster", requireAdmin, async (_req, res) => {
+    res.json(await storage.getRoster());
+  });
+
+  app.post("/api/roster", requireAdmin, async (req, res) => {
+    const { fullName, email, team, active } = req.body ?? {};
+    if (typeof fullName !== "string" || !fullName.trim()) {
+      return res.status(400).json({ error: "fullName is required" });
+    }
+    await storage.upsertRosterEntry({
+      fullName: fullName.replace(/\s+/g, " ").trim().slice(0, 100),
+      email: typeof email === "string" ? email.trim().slice(0, 200) : "",
+      team: typeof team === "string" ? team.trim().slice(0, 60) : "",
+      active: active !== false,
+    });
+    res.json({ ok: true });
+  });
+
+  app.delete("/api/roster/:name", requireAdmin, async (req, res) => {
+    const removed = await storage.deleteRosterEntry(req.params.name);
+    if (!removed) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true });
+  });
+
+  app.get("/api/seats", requireAdmin, async (_req, res) => {
+    res.json(await storage.getSeats());
+  });
+
+  app.post("/api/seats", requireAdmin, async (req, res) => {
+    const { tool, paidSeats, costPerSeat, billingOwner, asOf, source } = req.body ?? {};
+    if (!["cgt", "cla", "per"].includes(tool)) {
+      return res.status(400).json({ error: "tool must be cgt, cla or per" });
+    }
+    const n = (v: unknown) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : 0);
+    await storage.setSeat({
+      tool,
+      paidSeats: Math.round(n(paidSeats)),
+      costPerSeat: n(costPerSeat),
+      billingOwner: typeof billingOwner === "string" ? billingOwner.trim().slice(0, 100) : "",
+      asOf: typeof asOf === "string" ? asOf.trim().slice(0, 40) : "",
+      source: typeof source === "string" ? source.trim().slice(0, 200) : "",
+    });
+    res.json({ ok: true });
   });
 
   // ── AI executive summary (admin only) ────────────────────────────────

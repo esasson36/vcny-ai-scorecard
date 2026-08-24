@@ -5,6 +5,11 @@
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
     "noEmit": true,
+    // Without an explicit target tsc assumes ES5, so every Set/Map iteration in
+    // the codebase reported a spurious downlevelIteration error and `npm run
+    // check` could never pass. Vite and esbuild set their own targets; this only
+    // affects type checking.
+    "target": "ES2020",
     "module": "ESNext",
     "strict": true,
     "lib": ["esnext", "dom", "dom.iterable"],
