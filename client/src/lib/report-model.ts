@@ -66,6 +66,12 @@ export function seatAction(toolPct: number): SeatAction {
 /** Submitted name → roster name, for people who typed something unmatchable. */
 export const NAME_ALIASES: Record<string, string> = {
   "kvelums": "Jackie Kvelums",
+  // First-name-only submitters, identified by Elie 2026-08-24. Bare first names
+  // are safe as keys while each is unique in the company; if a second Samantha
+  // ever joins, replace the bare key with something the form can distinguish.
+  "samantha": "Samantha Singh",
+  "yara": "Yara Barot",
+  "yael": "Yael Chamay",
 };
 
 /**

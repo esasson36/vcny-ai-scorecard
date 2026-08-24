@@ -351,6 +351,15 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-08-24 — First-name submitters resolved
+
+Samantha, Yara, and yael submitted without surnames, so they could not be
+matched to the roster and would have kept the export blocked. Elie identified
+them: added `samantha → Samantha Singh`, `yara → Yara Barot`, and
+`yael → Yael Chamay` to `NAME_ALIASES` (all three match their vcnyhome.com
+addresses). Aliases beat editing the submission rows because they also catch
+the same person typing just their first name again in any future month.
+
 ## 2026-08-24 — Roster duplicates fixed at the source; consistency sweep
 
 The new Roster screen showed every name four times. Root cause: the employees

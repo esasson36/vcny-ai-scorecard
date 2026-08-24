@@ -48,7 +48,7 @@ const submittedNames = [...new Set(rawRows.map(r => resolveName(r.name)))];
 const NOT_SUBMITTED_FIXTURE = [
   "Lisa Brier", "Katelyn Vanhise", "Katherine Angel", "Kathleen Crego",
   "Andrea Castellon", "Ana Lopes", "Laura Jimenez", "Shelly Qu",
-  "Tara Hull", "Yosef Chamay", "Yash Barot",
+  "Tara Hull",
 ];
 const roster: RosterEntry[] = [
   ...submittedNames.map(n => ({ fullName: n, email: "", team: "", active: true })),
