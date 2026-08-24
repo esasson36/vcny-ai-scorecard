@@ -361,7 +361,8 @@ showed straight through.
 
 - **Migration `dedupe-employees.sql`**: normalises whitespace in names, deletes
   the duplicate rows, and adds a case-insensitive unique index so duplicates can
-  never come back. Safe to run twice.
+  never come back. Safe to run twice. Applied to production on 2026-08-24;
+  confirmed each name now appears once.
 - `getRoster()` also dedupes defensively (merging whichever copy has an email or
   team filled in), so the UI is correct even before the migration runs.
 - **Roster "Add" was broken on arrival**: `upsert(..., { onConflict: "name" })`
@@ -521,7 +522,7 @@ is missing — the app keeps working, it just will not publish an unreconciled r
 ### Migration required
 
 `migrations/add-seats-and-roster.sql` — creates the `seats` table and adds
-`email` / `active` to `employees`. Run it **before** deploying. Paid seats seed to
+`email` / `active` to `employees`. Applied to production on 2026-08-24. Paid seats seed to
 0 on purpose: 0 is visibly unset and trips validation, whereas a guessed number
 would ship as if it had been reconciled.
 
