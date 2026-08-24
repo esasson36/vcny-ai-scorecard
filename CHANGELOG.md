@@ -320,6 +320,37 @@ unrepeatable.
   Must be run *before* deploying this change, or reads referencing the new column
   will fail. Applied to production on 2026-08-19.
 
+## 2026-08-24 — Backup & restore
+
+Supabase's free tier keeps no backups, so until now the only copy of the data was the
+one in the database. Two submissions from 2026-08-19 (including Lisa Brier's, confirmed
+by her email reply at 17:05 UTC that day) were lost with no way to get them back. This
+adds an off-database copy that can be loaded straight back in.
+
+- **Settings → Backup & restore**, with a live count of what a backup would contain
+  (active submissions plus anything sitting in Recently deleted).
+  - **Download backup** — one `.xlsx` holding every submission verbatim, archived rows
+    included, plus a Reference sheet with headcounts, tool costs, and the employee list.
+  - **Restore from file** — accepts a backup `.xlsx` or `.json` and puts back whatever
+    is missing.
+- **Restore is additive and cannot destroy data.** Rows whose `id` already exists are
+  skipped, never overwritten, and nothing is ever deleted. Worst case a restore does
+  nothing; it can't make things worse.
+- The **↓ Excel** export gained a sixth **Raw Data** sheet. The other five sheets are
+  calculated views that can't be loaded back — this one uses the database's own column
+  names and is what a restore reads. So an everyday Excel export now doubles as a
+  working backup, whichever month filter is selected (the raw sheet always holds
+  everything).
+- New admin routes: `GET /api/backup` (full snapshot),
+  `POST /api/restore` (requires `{ confirm: "RESTORE" }`, same server-side gate pattern
+  as Clear all). Restore input is sanitised to known columns and capped at 20,000 rows.
+- Raised the JSON body limit to 5 MB — a restore posts every submission at once and the
+  Express default of 100 KB was too small.
+- No migration needed.
+
+**Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
+embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
+
 ### Required environment variables (Render → Environment)
 
 | Variable | Purpose |

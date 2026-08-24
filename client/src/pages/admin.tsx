@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Submission } from "@shared/schema";
@@ -12,6 +12,10 @@ import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Legend as RechartsLegend } from "recharts";
 import * as XLSX from "xlsx";
+
+// The workbook sheet holding verbatim rows. Written by the Excel export, read by
+// the restore — if this name changes in one place it must change in both.
+const RAW_SHEET = "Raw Data";
 
 // Midpoint hours saved per week for each time-saved score level (0–5)
 const TIME_HOURS = [0, 0.5, 2, 4, 7.5, 12];
@@ -315,6 +319,19 @@ export default function AdminPanel({ onLogout }: Props) {
       });
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fbRows), "Product Feedback");
+
+    // ── Sheet 6: Raw Data ────────────────────────────────────────────────────
+    // Every submission verbatim, ignoring the month filter, using the database's
+    // own column names. The other sheets are calculated views and can't be loaded
+    // back; this one can — Settings → Backup & restore reads exactly this sheet.
+    const rawRows: (string | number)[][] = [["id", "name", "team", "tools", "use_cases",
+      "challenges", "timestamp", "month", "notes", "feedback", "archived_at"]];
+    subs.forEach(sub => {
+      rawRows.push([sub.id, sub.name, sub.team, sub.tools, sub.useCases ?? "",
+        sub.challenges ?? "", sub.timestamp, getMonth(sub), sub.notes ?? "",
+        sub.feedback ?? "", ""]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rawRows), RAW_SHEET);
 
     XLSX.writeFile(wb, `vcny-ai-scorecard-${suffix}.xlsx`);
   }
@@ -2566,6 +2583,159 @@ function RecentlyDeleted() {
   );
 }
 
+// apiRequest throws Error("404: {\"error\":\"...\"}") on failure. Surface just the
+// server's own message so the user sees a sentence, not a status code and JSON.
+function apiErrorText(e: unknown, fallback: string): string {
+  const raw = e instanceof Error ? e.message : String(e ?? "");
+  const m = /^\d{3}:\s*([\s\S]*)$/.exec(raw);
+  if (!m) return raw || fallback;
+  try {
+    const parsed = JSON.parse(m[1]);
+    if (typeof parsed?.error === "string") return parsed.error;
+  } catch { /* body wasn't JSON — fall through to the raw text */ }
+  return m[1].trim() || fallback;
+}
+
+function BackupRestore() {
+  const qc = useQueryClient();
+  const { data: live = [] } = useQuery<Submission[]>({ queryKey: ["/api/submissions"] });
+  const { data: archived = [] } = useQuery<Submission[]>({ queryKey: ["/api/submissions-archived"] });
+  const [busy, setBusy] = useState<"" | "backup" | "restore">("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function downloadBackup() {
+    setBusy("backup");
+    setMsg(null);
+    try {
+      const snap = await (await apiRequest("GET", "/api/backup")).json();
+      const wb = XLSX.utils.book_new();
+
+      // Verbatim rows — this is the sheet a restore reads back
+      const cols = ["id", "name", "team", "tools", "use_cases", "challenges",
+        "timestamp", "month", "notes", "feedback", "archived_at"];
+      const rows: (string | number)[][] = [cols];
+      (snap.submissions ?? []).forEach((r: Record<string, unknown>) => {
+        rows.push(cols.map(c => (r[c] == null ? "" : String(r[c]))));
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), RAW_SHEET);
+
+      // Everything else the app stores, so a rebuild doesn't lose the setup
+      const ref: (string | number)[][] = [["Section", "Key", "Value"]];
+      Object.entries(snap.headcounts ?? {}).forEach(([k, v]) => ref.push(["Headcount", k, String(v)]));
+      Object.entries(snap.toolCosts ?? {}).forEach(([k, v]) => ref.push(["Tool cost", k, String(v)]));
+      (snap.employees ?? []).forEach((e: { name: string; team: string }) => ref.push(["Employee", e.name, e.team]));
+      ref.push(["Backup", "Exported at", snap.exportedAt ?? ""]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ref), "Reference");
+
+      const stamp = (snap.exportedAt ?? "").slice(0, 10) || "backup";
+      XLSX.writeFile(wb, `vcny-ai-backup-${stamp}.xlsx`);
+      const n = (snap.submissions ?? []).length;
+      setMsg({ ok: true, text: `Saved ${n} submission${n === 1 ? "" : "s"} to your Downloads folder.` });
+    } catch (e: any) {
+      setMsg({ ok: false, text: apiErrorText(e, "Backup failed.") });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be picked again after an error
+    if (!file) return;
+    setBusy("restore");
+    setMsg(null);
+    try {
+      let submissions: unknown[] = [];
+      if (file.name.toLowerCase().endsWith(".json")) {
+        const parsed = JSON.parse(await file.text());
+        submissions = Array.isArray(parsed) ? parsed : (parsed.submissions ?? []);
+      } else {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+        // Prefer the exact sheet, but accept any sheet named like it
+        const sheetName = wb.SheetNames.includes(RAW_SHEET)
+          ? RAW_SHEET
+          : wb.SheetNames.find(n => n.toLowerCase().replace(/\s+/g, "") === "rawdata");
+        if (!sheetName) {
+          throw new Error(`That workbook has no "${RAW_SHEET}" sheet. Use a backup file exported from this app.`);
+        }
+        submissions = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+      }
+      if (submissions.length === 0) throw new Error("That file has no submissions in it.");
+
+      const proceed = confirm(
+        `Restore ${submissions.length} submission${submissions.length === 1 ? "" : "s"} from ${file.name}?
+
+` +
+        `Anything already in the database is left exactly as it is — only missing submissions get added back.`
+      );
+      if (!proceed) { setBusy(""); return; }
+
+      const data = await (await apiRequest("POST", "/api/restore", { confirm: "RESTORE", submissions })).json();
+      qc.invalidateQueries({ queryKey: ["/api/submissions"] });
+      qc.invalidateQueries({ queryKey: ["/api/submissions-archived"] });
+      const parts = [`Restored ${data.inserted}`];
+      if (data.skipped) parts.push(`${data.skipped} already there`);
+      if (data.unreadable) parts.push(`${data.unreadable} unreadable`);
+      setMsg({ ok: true, text: parts.join(" · ") + "." });
+    } catch (e: any) {
+      setMsg({ ok: false, text: apiErrorText(e, "Restore failed.") });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const btn = "text-[11px] uppercase tracking-[0.08em] border-[1.5px] border-foreground px-3 py-1.5 rounded-sm hover:bg-foreground hover:text-background transition-colors disabled:opacity-50";
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-6">
+      <h2 className="text-base font-semibold mb-1">Backup &amp; restore</h2>
+      <p className="text-xs text-muted-foreground mb-4">
+        The database has no backups of its own. Download a copy whenever you like — it holds
+        every submission exactly as stored, so it can be loaded straight back in.
+      </p>
+
+      <div className="text-sm mb-4 border border-border rounded-sm px-3 py-2">
+        <span className="font-medium">{live.length}</span>
+        <span className="text-muted-foreground"> active</span>
+        {archived.length > 0 && (
+          <>
+            <span className="text-muted-foreground"> · </span>
+            <span className="font-medium">{archived.length}</span>
+            <span className="text-muted-foreground"> in Recently deleted</span>
+          </>
+        )}
+        <span className="text-muted-foreground"> — both are included.</span>
+      </div>
+
+      {msg && (
+        <div className={`mb-4 px-3 py-2 rounded-sm text-sm border ${
+          msg.ok ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
+        }`}>
+          {msg.text}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button onClick={downloadBackup} disabled={busy !== ""} className={btn}
+          style={{ fontFamily: "'Geist Mono', monospace" }}>
+          {busy === "backup" ? "Saving…" : "↓ Download backup"}
+        </button>
+        <button onClick={() => fileRef.current?.click()} disabled={busy !== ""}
+          className="text-[11px] uppercase tracking-[0.08em] border border-border px-3 py-1.5 rounded-sm hover:border-foreground transition-colors disabled:opacity-50"
+          style={{ fontFamily: "'Geist Mono', monospace" }}>
+          {busy === "restore" ? "Restoring…" : "↑ Restore from file"}
+        </button>
+        <input ref={fileRef} type="file" accept=".xlsx,.json" onChange={handleFile} className="hidden" />
+      </div>
+
+      <p className="text-[11px] text-muted-foreground mt-3">
+        Restoring only adds submissions that are missing. It never overwrites or deletes what's already there.
+      </p>
+    </div>
+  );
+}
+
 function SettingsView() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -2612,6 +2782,7 @@ function SettingsView() {
 
   return (
     <div className="max-w-md space-y-4">
+      <BackupRestore />
       <RecentlyDeleted />
 
       <div className="bg-card border border-border rounded-sm p-6">

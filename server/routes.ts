@@ -195,6 +195,75 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json({ ok: true });
   });
 
+  // ── Backup & restore (admin only) ────────────────────────────────────
+  // A full snapshot of everything the app owns. Downloaded as .xlsx or .json
+  // so there's always an off-database copy — Supabase's free tier has no backups.
+  app.get("/api/backup", requireAdmin, async (_req, res) => {
+    const [submissions, headcounts, toolCosts, employees] = await Promise.all([
+      storage.getRawSubmissions(),
+      storage.getHeadcounts(),
+      storage.getToolCosts(),
+      storage.getEmployees(),
+    ]);
+    res.json({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      counts: {
+        submissions: submissions.length,
+        archived: submissions.filter(r => r.archived_at).length,
+      },
+      submissions,
+      headcounts,
+      toolCosts,
+      employees,
+    });
+  });
+
+  // Restore is additive: it only puts back rows that are missing. Existing rows
+  // are left untouched, so this can never overwrite or delete current data.
+  app.post("/api/restore", requireAdmin, async (req, res) => {
+    if (req.body?.confirm !== "RESTORE") {
+      return res.status(400).json({ error: 'Confirmation required: send { confirm: "RESTORE" }.' });
+    }
+    const incoming = req.body?.submissions;
+    if (!Array.isArray(incoming) || incoming.length === 0) {
+      return res.status(400).json({ error: "No submissions found in that backup file." });
+    }
+    if (incoming.length > 20000) {
+      return res.status(400).json({ error: "That backup is too large to restore in one go." });
+    }
+    const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+    const rows = [];
+    for (const r of incoming) {
+      if (!r || typeof r !== "object") continue;
+      const id = str((r as any).id, 100);
+      const name = str((r as any).name, 100);
+      const timestamp = str((r as any).timestamp, 40);
+      // A row without these can't be rebuilt faithfully, so skip it rather than guess
+      if (!id || !name || !timestamp) continue;
+      rows.push({
+        id,
+        name,
+        team: str((r as any).team, 60) || "Unassigned",
+        tools: str((r as any).tools, 20000) || "{}",
+        use_cases: str((r as any).use_cases ?? (r as any).useCases, 5000),
+        challenges: str((r as any).challenges, 5000),
+        timestamp,
+        month: str((r as any).month, 7) || timestamp.slice(0, 7),
+        notes: str((r as any).notes, 5000),
+        feedback: str((r as any).feedback, 20000),
+        archived_at: typeof (r as any).archived_at === "string" && (r as any).archived_at
+          ? (r as any).archived_at
+          : null,
+      });
+    }
+    if (rows.length === 0) {
+      return res.status(400).json({ error: "That file didn't contain any readable submissions." });
+    }
+    const result = await storage.insertMissingSubmissions(rows as any);
+    res.json({ ok: true, ...result, unreadable: incoming.length - rows.length });
+  });
+
   // ── Employees (admin only) ──────────────────────────────────────────
   app.get("/api/employees", requireAdmin, async (_req, res) => {
     res.json(await storage.getEmployees());

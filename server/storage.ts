@@ -16,7 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 });
 
 // Raw DB row (snake_case columns) → app-facing Submission (camelCase)
-interface Row {
+export interface Row {
   id: string;
   name: string;
   team: string;
@@ -57,6 +57,8 @@ export interface IStorage {
   restoreSubmission(id: string): Promise<boolean>;
   restoreAllArchived(): Promise<number>;
   purgeSubmission(id: string): Promise<boolean>;
+  getRawSubmissions(): Promise<Row[]>;
+  insertMissingSubmissions(rows: Row[]): Promise<{ inserted: number; skipped: number }>;
   checkDuplicate(name: string, team: string, month: string): Promise<boolean>;
   getHeadcounts(): Promise<Record<string, number>>;
   setHeadcount(team: string, count: number): Promise<void>;
@@ -191,6 +193,35 @@ export const storage: IStorage = {
       .not("archived_at", "is", null); // refuse to hard-delete a live row
     if (error) throw error;
     return (count ?? 0) > 0;
+  },
+
+  // ── Backup & restore ──────────────────────────────────────────────────
+  // Every row exactly as stored, archived ones included. This is the snapshot
+  // the Excel/JSON backup is built from, so a restore can rebuild the table.
+  async getRawSubmissions(): Promise<Row[]> {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("*")
+      .order("timestamp", { ascending: true });
+    if (error) throw error;
+    return (data as Row[]) ?? [];
+  },
+
+  // Additive only: rows whose id already exists are skipped, never overwritten.
+  // A restore can therefore never destroy data that's currently in the table.
+  async insertMissingSubmissions(rows: Row[]): Promise<{ inserted: number; skipped: number }> {
+    if (rows.length === 0) return { inserted: 0, skipped: 0 };
+    const { data: existing, error: readErr } = await supabase.from("submissions").select("id");
+    if (readErr) throw readErr;
+    const have = new Set(((existing as { id: string }[]) ?? []).map(r => r.id));
+    const fresh = rows.filter(r => !have.has(r.id));
+    const skipped = rows.length - fresh.length;
+    // Chunk so a large restore doesn't hit Supabase's request size ceiling
+    for (let i = 0; i < fresh.length; i += 200) {
+      const { error } = await supabase.from("submissions").insert(fresh.slice(i, i + 200));
+      if (error) throw error;
+    }
+    return { inserted: fresh.length, skipped };
   },
 
   async checkDuplicate(name: string, team: string, month: string): Promise<boolean> {

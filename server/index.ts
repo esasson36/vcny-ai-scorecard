@@ -43,6 +43,8 @@ declare module "http" {
 
 app.use(
   express.json({
+    // Restoring a backup posts every submission at once, so the default 100kb is too small
+    limit: "5mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
