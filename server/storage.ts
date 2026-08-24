@@ -290,7 +290,16 @@ export const storage: IStorage = {
       .from("employees")
       .select("name, email, team, active")
       .order("name");
-    if (error) throw error;
+    // The email/active columns arrive with add-seats-and-roster.sql. Between the
+    // deploy and that migration the select fails, so fall back to the columns that
+    // have always existed rather than 500-ing every caller (including backups).
+    if (error) {
+      const { data: legacy, error: legacyErr } = await supabase
+        .from("employees").select("name, team").order("name");
+      if (legacyErr) throw legacyErr;
+      return ((legacy as { name: string; team: string | null }[]) ?? [])
+        .map(r => ({ fullName: r.name, email: "", team: r.team ?? "", active: true }));
+    }
     return ((data as { name: string; email: string | null; team: string | null; active: boolean | null }[]) ?? [])
       .map(r => ({
         fullName: r.name,
@@ -319,7 +328,9 @@ export const storage: IStorage = {
   // ── Seats (CH-02) ─────────────────────────────────────────────────────
   async getSeats(): Promise<SeatRow[]> {
     const { data, error } = await supabase.from("seats").select("*");
-    if (error) throw error;
+    // Table arrives with add-seats-and-roster.sql. Until then report as "no seat
+    // data", which the model already surfaces as a blocking validation message.
+    if (error) return [];
     return ((data as Record<string, unknown>[]) ?? []).map(r => ({
       tool: String(r.tool),
       paidSeats: Number(r.paid_seats ?? 0),

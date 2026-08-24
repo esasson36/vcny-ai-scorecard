@@ -456,6 +456,13 @@ goes flat again, it fails.
   Changing the numbers is now a one-line edit to `GRADE_BANDS`.
 - **`normalizeName` is not a blanket title-case**, for the reason given above.
 
+### Safe to deploy before the migration
+
+`getRoster()` and `getSeats()` fall back to the pre-migration schema rather than
+erroring, so the deploy and the SQL can land in either order. Until the migration
+runs, seats read as empty and the export stays blocked with a message naming what
+is missing — the app keeps working, it just will not publish an unreconciled report.
+
 ### Migration required
 
 `migrations/add-seats-and-roster.sql` — creates the `seats` table and adds
