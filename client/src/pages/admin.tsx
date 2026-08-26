@@ -12,7 +12,7 @@ import {
   METHODOLOGY_NOTES, SEAT_ACTION_BANDS,
   type RosterEntry, type SeatRecord, type ReportModel,
 } from "@/lib/report-model";
-import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox } from "lucide-react";
+import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox, Plus, Minus } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Legend as RechartsLegend } from "recharts";
@@ -105,6 +105,16 @@ export default function AdminPanel({ onLogout }: Props) {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [compareA, setCompareA] = useState<string>("");
   const [compareB, setCompareB] = useState<string>("");
+  // Sidebar visibility survives reloads; localStorage can throw in some
+  // browser privacy modes, so both access points are guarded.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("vcny-admin-sidebar") !== "closed"; } catch { return true; }
+  });
+  function toggleSidebar(open: boolean) {
+    setSidebarOpen(open);
+    try { localStorage.setItem("vcny-admin-sidebar", open ? "open" : "closed"); } catch { /* fine */ }
+  }
+
   const [teamCompareA, setTeamCompareA] = useState<string>("");
   const [teamCompareB, setTeamCompareB] = useState<string>("");
   const [reportBusy, setReportBusy] = useState(false);
@@ -652,7 +662,7 @@ ${sectionHead("Methodology &amp; Limitations")}
 
   return (
     <div className="min-h-screen bg-background py-8 px-5">
-      <div className="max-w-[760px] mx-auto">
+      <div className={cn("mx-auto transition-all", sidebarOpen ? "max-w-[1080px]" : "max-w-[760px]")}>
         {/* Header */}
         <div className="border-b-2 border-foreground pb-5 mb-8 flex justify-between items-end">
           <div>
@@ -704,7 +714,8 @@ ${sectionHead("Methodology &amp; Limitations")}
           </div>
         )}
 
-        <div key={view} className="animate-fade-up">
+        <div className={cn(sidebarOpen && "lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-5 lg:items-start")}>
+        <div key={view} className="animate-fade-up min-w-0">
         {view === "dashboard" && (
           <DashView
             subs={sorted} allSubs={subs} allMonths={allMonths}
@@ -789,6 +800,162 @@ ${sectionHead("Methodology &amp; Limitations")}
           />
         )}
         </div>
+
+        {sidebarOpen && (
+          <AdminSidebar subs={filteredSubs}
+            teamA={teamCompareA} teamB={teamCompareB}
+            onChangeA={setTeamCompareA} onChangeB={setTeamCompareB}
+            monthLabel={selectedMonth === "all" ? "All time" : fmtMonth(selectedMonth)}
+            onCollapse={() => toggleSidebar(false)} />
+        )}
+        </div>
+      </div>
+
+      {/* Reopen handle when the sidebar is minimized */}
+      {!sidebarOpen && (
+        <button onClick={() => toggleSidebar(true)} title="Show sidebar"
+          className="fixed right-3 bottom-6 z-40 w-8 h-8 flex items-center justify-center bg-card border-[1.5px] border-border rounded-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors shadow-sm">
+          <Plus className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+// Two always-available panels beside every tab: this month's challenge comments
+// and the Team vs Team radar. The team pickers here write the same state as the
+// Team vs Team tab, so changing one changes the other.
+const SIDEBAR_TOOL_DOT: Record<string, string> = { cgt: "#10a37f", cla: "#d97757", per: "#20808d" };
+
+function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, onCollapse }: {
+  subs: Submission[];            // already filtered to the selected month
+  teamA: string; teamB: string;
+  onChangeA: (t: string) => void; onChangeB: (t: string) => void;
+  monthLabel: string;
+  onCollapse: () => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+
+  const challengeItems = useMemo(() =>
+    subs
+      .filter(s => (s.challenges ?? "").trim())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .map(s => ({
+        id: s.id,
+        name: resolveName(s.name),
+        team: s.team,
+        text: (s.challenges ?? "").trim(),
+        tools: Object.keys(parseTools(s.tools)).filter(t => SIDEBAR_TOOL_DOT[t]),
+      })),
+    [subs]);
+  const visibleChallenges = showAll ? challengeItems : challengeItems.slice(0, 4);
+
+  const allTeams = useMemo(() => [...new Set(subs.map(s => s.team))].filter(Boolean).sort(), [subs]);
+  const subsA = subs.filter(s => s.team === teamA);
+  const subsB = subs.filter(s => s.team === teamB);
+  const radarData = (["freq", "time", "impact", "adopt"] as MetricKey[]).map(m => {
+    const metricLabel = ({ freq: "Frequency", time: "Time", impact: "Impact", adopt: "Adoption" } as Record<string, string>)[m];
+    const metricAvg = (list: Submission[]) => {
+      const vals = list.flatMap(sub =>
+        TOOL_KEYS.flatMap(t => {
+          const ts = parseTools(sub.tools);
+          return ts[t] ? [(ts[t][m] ?? 0) as number] : [];
+        }));
+      return vals.length ? Math.round(vals.reduce((a: number, b: number) => a + b, 0) / vals.length * 10) / 10 : 0;
+    };
+    return { metric: metricLabel, a: metricAvg(subsA), b: metricAvg(subsB) };
+  });
+
+  const selectCls = "w-full px-2 py-1 border-[1.5px] border-input rounded-sm text-xs bg-background text-foreground focus:border-foreground focus:outline-none";
+
+  return (
+    <div className="lg:sticky lg:top-5 flex flex-col gap-4 mt-6 lg:mt-0">
+
+      {/* Challenges */}
+      <div className="bg-card border border-border rounded-sm p-4 relative">
+        <button onClick={onCollapse} title="Minimize sidebar"
+          className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center border border-border rounded-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
+          <Minus className="w-3 h-3" />
+        </button>
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3 pr-7"
+          style={{ fontFamily: "'Geist Mono', monospace" }}>
+          Challenges · {monthLabel}
+        </h3>
+        {challengeItems.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No challenge comments this month.</p>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {visibleChallenges.map(c => (
+                <div key={c.id} className="border-l-2 border-border pl-2.5">
+                  <p className="text-[12.5px] leading-snug text-foreground/85">“{c.text}”</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="flex items-center gap-1">
+                      {c.tools.map(t => (
+                        <span key={t} title={TOOLS[t]} className="inline-block w-2 h-2 rounded-full"
+                          style={{ background: SIDEBAR_TOOL_DOT[t] }} />
+                      ))}
+                    </span>
+                    <span className="text-[10.5px] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                      {c.name} · {c.team}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {challengeItems.length > 4 && (
+              <button onClick={() => setShowAll(v => !v)}
+                className="mt-3 text-[11px] uppercase tracking-[0.08em] text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+                style={{ fontFamily: "'Geist Mono', monospace" }}>
+                {showAll ? "Show less" : `Show all ${challengeItems.length} →`}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Overall comparison — same state as the Team vs Team tab */}
+      <div className="bg-card border border-border rounded-sm p-4">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3"
+          style={{ fontFamily: "'Geist Mono', monospace" }}>
+          Overall comparison
+        </h3>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <select value={teamA} onChange={e => onChangeA(e.target.value)} className={selectCls} title="Team A">
+            {!teamA && <option value="">Team A…</option>}
+            {allTeams.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={teamB} onChange={e => onChangeB(e.target.value)} className={selectCls} title="Team B">
+            {!teamB && <option value="">Team B…</option>}
+            {allTeams.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        {(subsA.length > 0 || subsB.length > 0) ? (
+          <>
+            <ResponsiveContainer width="100%" height={195}>
+              <RadarChart data={radarData} margin={{ top: 8, right: 24, bottom: 0, left: 24 }}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10 }} />
+                <PolarRadiusAxis angle={90} domain={[0, 5]} tickCount={3} tick={{ fontSize: 9 }} />
+                <Radar name={teamA || "Team A"} dataKey="a" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} />
+                <Radar name={teamB || "Team B"} dataKey="b" stroke="#f97316" fill="#f97316" fillOpacity={0.25} />
+              </RadarChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-4 mt-1">
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <span className="inline-block w-2.5 h-2.5 rounded-[2px]" style={{ background: "#3b82f6" }} />
+                {teamA || "Team A"} <span className="text-muted-foreground">({subsA.length})</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <span className="inline-block w-2.5 h-2.5 rounded-[2px]" style={{ background: "#f97316" }} />
+                {teamB || "Team B"} <span className="text-muted-foreground">({subsB.length})</span>
+              </span>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">Pick two teams to compare.</p>
+        )}
       </div>
     </div>
   );

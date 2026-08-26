@@ -351,6 +351,24 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-08-24 — Admin sidebar: challenges + team comparison
+
+New right-hand sidebar in the admin panel, visible on every tab (mockup approved
+before building). Main content keeps its layout in a left column; the sidebar
+holds two cards:
+
+- **Challenges** — this month's free-text challenge comments, newest first, top 4
+  with a "show all" toggle. Each quote carries small colored dots for the tools
+  that person rated on the form (ChatGPT green, Claude rust, Perplexity teal).
+- **Overall comparison** — the Team vs Team radar chart, with two compact team
+  dropdowns right in the card. They read and write the same state as the
+  Team vs Team tab, so changing teams in either place changes both.
+
+Minimize with the − button in the sidebar's corner; a + handle at the bottom-right
+edge brings it back. The choice is remembered per browser. When minimized the page
+returns to its original 760px centered layout; on narrow windows the sidebar drops
+below the main content.
+
 ## 2026-08-24 — First-name submitters resolved
 
 Samantha, Yara, and yael submitted without surnames, so they could not be
