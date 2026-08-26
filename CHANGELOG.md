@@ -363,9 +363,9 @@ score instead of the overall average (`client/src/lib/tips.ts`):
   below that, weakest-first: one weak tool → all 5, two → 3/2 (the spec's
   example: low Perplexity + decent Claude + good ChatGPT → 3 Perplexity, 2
   Claude), three → 3/1/1. Each tip carries a small dot in its tool's color.
-- **Free-text team names keyword-match to a pool** ("people ops" → HR, "the QA
-  dept" → Quality Assurance & Compliance, "helpdesk" → IT); no match → General.
-  "accounting" deliberately does not match Sales despite containing "account".
+- **Manually entered team names get the General pool** of 30 generic tips
+  (10 per tool) — no keyword guessing. (Keyword matching was built first and
+  removed the same day: a wrong guess is worse than a good generic tip.)
 - **All tools 80%+ → a congratulations note instead**, drawn from 6 variants so
   it doesn't feel canned.
 - Selection is **pseudo-random but seeded on name+month**: the same person sees

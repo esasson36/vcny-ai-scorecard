@@ -41,33 +41,13 @@ function seededPick<T>(arr: readonly T[], n: number, rnd: () => number): T[] {
 }
 
 // ── Team matching ────────────────────────────────────────────────────────────
-// Free-text team names ("people ops", "the QA dept") map onto a preset pool by
-// keyword. First match wins, so more specific patterns come before generic ones
-// ("pet" before "produc"). Anything unmatched falls back to the General pool.
-const TEAM_KEYWORDS: [RegExp, string][] = [
-  [/pet/i, "Pet Production"],
-  [/pack/i, "Packaging"],
-  [/qual|compliance|\bqa\b|test/i, "Quality Assurance & Compliance"],
-  [/produc|factory|manufactur/i, "Production"],
-  [/merch|buy|assort/i, "Merchandising"],
-  [/market|social|content|brand.?ing/i, "Marketing"],
-  [/brand/i, "Brands"],
-  [/design|creative|art|graphic|print/i, "Design"],
-  [/sale|account(?!ing)|amazon|walmart|target|wholesale/i, "Sales"],
-  [/\bhr\b|human|people|talent|recruit/i, "HR"],
-  [/\bit\b|tech|info|system|network|help.?desk/i, "IT"],
-  [/op(s|eration)|logistic|warehouse|ship|supply/i, "Operations"],
-  [/exec|lead|c.?suite|founder|director|management/i, "Executive"],
-  [/\bai\b|artificial|automation|innovation/i, "AI"],
-];
-
+// Preset teams get their own pool; anything typed in manually gets the General
+// pool of 30 generic tips (10 per tool). No keyword guessing — a wrong guess
+// ("accounting" → Sales tips) is worse than a good generic tip.
 export function matchTeamPool(teamName: string): string {
   const t = (teamName ?? "").trim();
   if (!t) return "General";
-  const exact = Object.keys(TEAM_TIPS).find(k => k.toLowerCase() === t.toLowerCase());
-  if (exact) return exact;
-  for (const [re, pool] of TEAM_KEYWORDS) if (re.test(t)) return pool;
-  return "General";
+  return Object.keys(TEAM_TIPS).find(k => k.toLowerCase() === t.toLowerCase()) ?? "General";
 }
 
 // ── The pools: 10 tips per tool per team ─────────────────────────────────────
