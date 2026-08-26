@@ -356,6 +356,9 @@ embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 - **The sidebar is now drag-resizable from either edge** (260–560px), replacing
   the fixed width. Hover an edge, grab the handle, drag; the chosen width is
   remembered per browser, and the page widens/narrows with it.
+- **Clicking a challenge comment opens that person's full submission** (same
+  detail view as clicking them in the dashboard list). Hovering highlights the
+  quote; Enter/Space work too.
 - **Each sidebar section's bottom edge resizes independently.** The Challenges
   card's bottom edge sets the quote viewport (100–1200px, scrolls inside when
   longer); the comparison card's bottom edge sets the radar chart height

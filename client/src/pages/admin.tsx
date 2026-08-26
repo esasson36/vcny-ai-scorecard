@@ -849,7 +849,8 @@ ${sectionHead("Methodology &amp; Limitations")}
               teamA={teamCompareA} teamB={teamCompareB}
               onChangeA={setTeamCompareA} onChangeB={setTeamCompareB}
               monthLabel={selectedMonth === "all" ? "All time" : fmtMonth(selectedMonth)}
-              onCollapse={() => toggleSidebar(false)} />
+              onCollapse={() => toggleSidebar(false)}
+              onOpen={id => { setActiveId(id); setView("detail"); }} />
           </div>
         )}
         </div>
@@ -916,12 +917,13 @@ function BottomHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
 // Team vs Team tab, so changing one changes the other.
 const SIDEBAR_TOOL_DOT: Record<string, string> = { cgt: "#10a37f", cla: "#d97757", per: "#20808d" };
 
-function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, onCollapse }: {
+function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, onCollapse, onOpen }: {
   subs: Submission[];            // already filtered to the selected month
   teamA: string; teamB: string;
   onChangeA: (t: string) => void; onChangeB: (t: string) => void;
   monthLabel: string;
   onCollapse: () => void;
+  onOpen: (id: string) => void;  // jump to that person's full submission
 }) {
   // Each section's bottom edge resizes independently and remembers its size
   const challengeBox = useDragSize("vcny-admin-sidebar-challenges-h", 320, 100, 1200);
@@ -978,7 +980,10 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
           <>
             <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: challengeBox.size }}>
               {challengeItems.map(c => (
-                <div key={c.id} className="border-l-2 border-border pl-2.5">
+                <div key={c.id} onClick={() => onOpen(c.id)} role="button" tabIndex={0}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c.id); } }}
+                  title="Open this submission"
+                  className="border-l-2 border-border pl-2.5 cursor-pointer rounded-r-sm -mr-1 pr-1 py-0.5 hover:border-foreground hover:bg-secondary/50 transition-colors">
                   <p className="text-[12.5px] leading-snug text-foreground/85">“{c.text}”</p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <span className="flex items-center gap-1">
