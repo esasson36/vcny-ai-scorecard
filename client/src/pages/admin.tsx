@@ -881,6 +881,35 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
 }) {
   const [showAll, setShowAll] = useState(false);
 
+  // Chart height is drag-resizable from the sidebar's bottom edge
+  const CHART_MIN = 140, CHART_MAX = 420;
+  const [chartH, setChartH] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem("vcny-admin-sidebar-chart-h") ?? "");
+      return isNaN(v) ? 195 : Math.min(CHART_MAX, Math.max(CHART_MIN, v));
+    } catch { return 195; }
+  });
+  const chartHRef = useRef(chartH);
+  function startChartDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = chartHRef.current;
+    document.body.style.cursor = "row-resize";
+    const move = (ev: MouseEvent) => {
+      const h = Math.min(CHART_MAX, Math.max(CHART_MIN, startH + (ev.clientY - startY)));
+      chartHRef.current = h;
+      setChartH(h);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = "";
+      try { localStorage.setItem("vcny-admin-sidebar-chart-h", String(chartHRef.current)); } catch { /* fine */ }
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
   const challengeItems = useMemo(() =>
     subs
       .filter(s => (s.challenges ?? "").trim())
@@ -960,7 +989,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
       </div>
 
       {/* Overall comparison — same state as the Team vs Team tab */}
-      <div className="bg-card border border-border rounded-sm p-4">
+      <div className="bg-card border border-border rounded-sm p-4 relative">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3"
           style={{ fontFamily: "'Geist Mono', monospace" }}>
           Overall comparison
@@ -977,7 +1006,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
         </div>
         {(subsA.length > 0 || subsB.length > 0) ? (
           <>
-            <ResponsiveContainer width="100%" height={195}>
+            <ResponsiveContainer width="100%" height={chartH}>
               <RadarChart data={radarData} margin={{ top: 8, right: 24, bottom: 0, left: 24 }}>
                 <PolarGrid />
                 <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10 }} />
@@ -1000,6 +1029,11 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
         ) : (
           <p className="text-xs text-muted-foreground">Pick two teams to compare.</p>
         )}
+        {/* Drag the bottom edge to resize the chart */}
+        <div onMouseDown={startChartDrag} title="Drag to resize chart"
+          className="absolute -bottom-1.5 left-0 right-0 h-3 cursor-row-resize group">
+          <div className="absolute bottom-1 left-3 right-3 h-[3px] rounded-full bg-transparent group-hover:bg-border transition-colors" />
+        </div>
       </div>
     </div>
   );
