@@ -356,8 +356,12 @@ embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 - **The sidebar is now drag-resizable from either edge** (260–560px), replacing
   the fixed width. Hover an edge, grab the handle, drag; the chosen width is
   remembered per browser, and the page widens/narrows with it.
-- **The bottom edge resizes too**: dragging the comparison card's bottom edge
-  changes the radar chart's height (140–420px), also remembered per browser.
+- **Each sidebar section's bottom edge resizes independently.** The Challenges
+  card's bottom edge caps the quote list (100–700px, scrolls inside when longer);
+  the comparison card's bottom edge sets the radar chart height (140–420px).
+  Every size is remembered per browser separately. The drag plumbing was
+  consolidated into one `useDragSize` hook + `BottomHandle` component so future
+  resizable sections are one line each.
 - **Team dropdowns now list every team that has ever appeared in a submission.**
   The form offered 6 teams + Other while submissions held 14 — eight teams
   (AI, Brands, IT, Operations, Packaging, Pet Production, Production, Quality

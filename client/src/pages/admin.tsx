@@ -866,6 +866,50 @@ ${sectionHead("Methodology &amp; Limitations")}
   );
 }
 
+// Drag-to-resize with the result remembered per browser. axis "y" tracks
+// vertical drags, "x" horizontal; dir flips which direction grows the value.
+function useDragSize(key: string, def: number, min: number, max: number) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const [size, setSize] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem(key) ?? "");
+      return isNaN(v) ? def : clamp(v);
+    } catch { return def; }
+  });
+  const ref = useRef(size);
+  function start(e: React.MouseEvent, axis: "x" | "y" = "y", dir: 1 | -1 = 1) {
+    e.preventDefault();
+    const startPos = axis === "y" ? e.clientY : e.clientX;
+    const startSize = ref.current;
+    document.body.style.cursor = axis === "y" ? "row-resize" : "col-resize";
+    const move = (ev: MouseEvent) => {
+      const pos = axis === "y" ? ev.clientY : ev.clientX;
+      const v = clamp(startSize + dir * (pos - startPos));
+      ref.current = v;
+      setSize(v);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = "";
+      try { localStorage.setItem(key, String(ref.current)); } catch { /* fine */ }
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+  return { size, start };
+}
+
+// The horizontal grab strip at the bottom edge of a sidebar card
+function BottomHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div onMouseDown={onMouseDown} title="Drag to resize"
+      className="absolute -bottom-1.5 left-0 right-0 h-3 cursor-row-resize group/handle">
+      <div className="absolute bottom-1 left-3 right-3 h-[3px] rounded-full bg-transparent group-hover/handle:bg-border transition-colors" />
+    </div>
+  );
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 // Two always-available panels beside every tab: this month's challenge comments
 // and the Team vs Team radar. The team pickers here write the same state as the
@@ -881,34 +925,9 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
 }) {
   const [showAll, setShowAll] = useState(false);
 
-  // Chart height is drag-resizable from the sidebar's bottom edge
-  const CHART_MIN = 140, CHART_MAX = 420;
-  const [chartH, setChartH] = useState<number>(() => {
-    try {
-      const v = parseInt(localStorage.getItem("vcny-admin-sidebar-chart-h") ?? "");
-      return isNaN(v) ? 195 : Math.min(CHART_MAX, Math.max(CHART_MIN, v));
-    } catch { return 195; }
-  });
-  const chartHRef = useRef(chartH);
-  function startChartDrag(e: React.MouseEvent) {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startH = chartHRef.current;
-    document.body.style.cursor = "row-resize";
-    const move = (ev: MouseEvent) => {
-      const h = Math.min(CHART_MAX, Math.max(CHART_MIN, startH + (ev.clientY - startY)));
-      chartHRef.current = h;
-      setChartH(h);
-    };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      document.body.style.cursor = "";
-      try { localStorage.setItem("vcny-admin-sidebar-chart-h", String(chartHRef.current)); } catch { /* fine */ }
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-  }
+  // Each section's bottom edge resizes independently and remembers its size
+  const challengeBox = useDragSize("vcny-admin-sidebar-challenges-h", 320, 100, 700);
+  const chartBox = useDragSize("vcny-admin-sidebar-chart-h", 195, 140, 420);
 
   const challengeItems = useMemo(() =>
     subs
@@ -946,7 +965,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
     <div className="lg:sticky lg:top-5 flex flex-col gap-4 mt-6 lg:mt-0">
 
       {/* Challenges */}
-      <div className="bg-card border border-border rounded-sm p-4 relative">
+      <div className="bg-card border border-border rounded-sm p-4 relative pb-5">
         <button onClick={onCollapse} title="Minimize sidebar"
           className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center border border-border rounded-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors">
           <Minus className="w-3 h-3" />
@@ -959,7 +978,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
           <p className="text-xs text-muted-foreground">No challenge comments this month.</p>
         ) : (
           <>
-            <div className="space-y-3">
+            <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: challengeBox.size }}>
               {visibleChallenges.map(c => (
                 <div key={c.id} className="border-l-2 border-border pl-2.5">
                   <p className="text-[12.5px] leading-snug text-foreground/85">“{c.text}”</p>
@@ -986,6 +1005,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
             )}
           </>
         )}
+        <BottomHandle onMouseDown={e => challengeBox.start(e)} />
       </div>
 
       {/* Overall comparison — same state as the Team vs Team tab */}
@@ -1006,7 +1026,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
         </div>
         {(subsA.length > 0 || subsB.length > 0) ? (
           <>
-            <ResponsiveContainer width="100%" height={chartH}>
+            <ResponsiveContainer width="100%" height={chartBox.size}>
               <RadarChart data={radarData} margin={{ top: 8, right: 24, bottom: 0, left: 24 }}>
                 <PolarGrid />
                 <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10 }} />
@@ -1029,11 +1049,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
         ) : (
           <p className="text-xs text-muted-foreground">Pick two teams to compare.</p>
         )}
-        {/* Drag the bottom edge to resize the chart */}
-        <div onMouseDown={startChartDrag} title="Drag to resize chart"
-          className="absolute -bottom-1.5 left-0 right-0 h-3 cursor-row-resize group">
-          <div className="absolute bottom-1 left-3 right-3 h-[3px] rounded-full bg-transparent group-hover:bg-border transition-colors" />
-        </div>
+        <BottomHandle onMouseDown={e => chartBox.start(e)} />
       </div>
     </div>
   );
