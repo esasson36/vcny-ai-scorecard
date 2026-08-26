@@ -351,6 +351,21 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-08-24 — Resizable sidebar; every submitted team in the dropdowns
+
+- **The sidebar is now drag-resizable from either edge** (260–560px), replacing
+  the fixed width. Hover an edge, grab the handle, drag; the chosen width is
+  remembered per browser, and the page widens/narrows with it.
+- **Team dropdowns now list every team that has ever appeared in a submission.**
+  The form offered 6 teams + Other while submissions held 14 — eight teams
+  (AI, Brands, IT, Operations, Packaging, Pet Production, Production, Quality
+  Assurance & Compliance) only existed as free-text "Other" entries. The shared
+  `TEAMS` list now carries all of them; the admin edit-submission dropdown was a
+  separate stale copy and now uses the same list.
+- Server-side team-casing canonicalization now lets **existing database casing
+  win** over the standard list, so picking "AI" from the new dropdown groups with
+  the already-stored "Ai" instead of splitting one team into two.
+
 ## 2026-08-24 — Admin sidebar: challenges + team comparison
 
 New right-hand sidebar in the admin panel, visible on every tab (mockup approved

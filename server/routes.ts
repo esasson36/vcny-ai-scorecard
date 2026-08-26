@@ -108,9 +108,14 @@ export function registerRoutes(httpServer: Server, app: Express) {
     // different case (e.g. "AI" vs "ai"), reuse the existing casing so we never
     // create a duplicate team that differs only by capitalization. The standard
     // dropdown teams take priority so free-text "hr" snaps to "HR".
-    const STANDARD_TEAMS = ["Marketing", "Merchandising", "Design", "Executive", "HR", "Sales"];
+    const STANDARD_TEAMS = ["AI", "Brands", "Design", "Executive", "HR", "IT", "Marketing",
+      "Merchandising", "Operations", "Packaging", "Pet Production", "Production",
+      "Quality Assurance & Compliance", "Sales"];
+    // Existing casing wins over the standard list: if the table already says
+    // "Ai", new "AI" submissions keep grouping with it instead of splitting
+    // the team in two. The standard list only decides casing for brand-new teams.
     const existingTeams = await storage.getDistinctTeams();
-    const candidates = [...STANDARD_TEAMS, ...existingTeams];
+    const candidates = [...existingTeams, ...STANDARD_TEAMS];
     const canonicalTeam = candidates.find(t => t.toLowerCase().trim() === team.toLowerCase().trim()) ?? team.trim();
     const submission = await storage.createSubmission({
       name,

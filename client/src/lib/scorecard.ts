@@ -24,7 +24,13 @@ export const CONTINUE_LABELS: Record<string, string> = {
   no: "No",
 };
 
-export const TEAMS = ["Marketing", "Merchandising", "Design", "Executive", "HR", "Sales", "Other"];
+// Every team that has ever appeared in a submission, so nobody has to use
+// free-text "Other" for a team we already know about. Alphabetical, Other last.
+export const TEAMS = [
+  "AI", "Brands", "Design", "Executive", "HR", "IT", "Marketing", "Merchandising",
+  "Operations", "Packaging", "Pet Production", "Production",
+  "Quality Assurance & Compliance", "Sales", "Other",
+];
 
 export const LABELS = {
   freq:   ["Never", "Rarely", "Monthly", "Weekly", "Several/wk", "Daily"],

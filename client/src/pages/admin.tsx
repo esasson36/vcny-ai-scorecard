@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Submission } from "@shared/schema";
 import {
-  TOOLS, TOOL_KEYS, LABELS, type ToolKey, type MetricKey,
+  TOOLS, TOOL_KEYS, TEAMS, LABELS, type ToolKey, type MetricKey,
   calcScore, pctToGrade, gradeAction, gradeClass, GRADE_LEGEND,
   FEEDBACK_KEYS, FEEDBACK_TOOLS, FEEDBACK_COLOR, CONTINUE_LABELS, type FeedbackKey,
 } from "@/lib/scorecard";
@@ -113,6 +113,38 @@ export default function AdminPanel({ onLogout }: Props) {
   function toggleSidebar(open: boolean) {
     setSidebarOpen(open);
     try { localStorage.setItem("vcny-admin-sidebar", open ? "open" : "closed"); } catch { /* fine */ }
+  }
+
+  // Sidebar width is drag-resizable from either edge and remembered per browser
+  const SIDEBAR_MIN = 260, SIDEBAR_MAX = 560;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem("vcny-admin-sidebar-width") ?? "");
+      return isNaN(v) ? 380 : Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, v));
+    } catch { return 380; }
+  });
+  const sidebarWidthRef = useRef(sidebarWidth);
+
+  // dir: which way dragging grows the sidebar. Left handle grows as the mouse
+  // moves left (-1); right handle grows as it moves right (+1).
+  function startSidebarDrag(e: React.MouseEvent, dir: -1 | 1) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidthRef.current;
+    document.body.style.cursor = "col-resize";
+    const move = (ev: MouseEvent) => {
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + dir * (ev.clientX - startX)));
+      sidebarWidthRef.current = w;
+      setSidebarWidth(w);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = "";
+      try { localStorage.setItem("vcny-admin-sidebar-width", String(sidebarWidthRef.current)); } catch { /* fine */ }
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
   }
 
   const [teamCompareA, setTeamCompareA] = useState<string>("");
@@ -662,7 +694,7 @@ ${sectionHead("Methodology &amp; Limitations")}
 
   return (
     <div className="min-h-screen bg-background py-8 px-5">
-      <div className={cn("mx-auto transition-all", sidebarOpen ? "max-w-[1080px]" : "max-w-[760px]")}>
+      <div className="mx-auto" style={{ maxWidth: sidebarOpen ? 780 + sidebarWidth : 760 }}>
         {/* Header */}
         <div className="border-b-2 border-foreground pb-5 mb-8 flex justify-between items-end">
           <div>
@@ -714,7 +746,8 @@ ${sectionHead("Methodology &amp; Limitations")}
           </div>
         )}
 
-        <div className={cn(sidebarOpen && "lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-5 lg:items-start")}>
+        <div className={cn(sidebarOpen && "lg:grid lg:gap-5 lg:items-start")}
+          style={sidebarOpen ? { gridTemplateColumns: `minmax(0,1fr) ${sidebarWidth}px` } : undefined}>
         <div key={view} className="animate-fade-up min-w-0">
         {view === "dashboard" && (
           <DashView
@@ -802,11 +835,22 @@ ${sectionHead("Methodology &amp; Limitations")}
         </div>
 
         {sidebarOpen && (
-          <AdminSidebar subs={filteredSubs}
-            teamA={teamCompareA} teamB={teamCompareB}
-            onChangeA={setTeamCompareA} onChangeB={setTeamCompareB}
-            monthLabel={selectedMonth === "all" ? "All time" : fmtMonth(selectedMonth)}
-            onCollapse={() => toggleSidebar(false)} />
+          <div className="relative">
+            {/* Drag either edge to resize; hidden on small screens where the sidebar stacks */}
+            <div onMouseDown={e => startSidebarDrag(e, -1)} title="Drag to resize"
+              className="hidden lg:block absolute -left-3 top-0 bottom-0 w-3 cursor-col-resize group z-10">
+              <div className="absolute left-1 top-0 bottom-0 w-[3px] rounded-full bg-transparent group-hover:bg-border transition-colors" />
+            </div>
+            <div onMouseDown={e => startSidebarDrag(e, 1)} title="Drag to resize"
+              className="hidden lg:block absolute -right-3 top-0 bottom-0 w-3 cursor-col-resize group z-10">
+              <div className="absolute right-1 top-0 bottom-0 w-[3px] rounded-full bg-transparent group-hover:bg-border transition-colors" />
+            </div>
+            <AdminSidebar subs={filteredSubs}
+              teamA={teamCompareA} teamB={teamCompareB}
+              onChangeA={setTeamCompareA} onChangeB={setTeamCompareB}
+              monthLabel={selectedMonth === "all" ? "All time" : fmtMonth(selectedMonth)}
+              onCollapse={() => toggleSidebar(false)} />
+          </div>
         )}
         </div>
       </div>
@@ -1629,7 +1673,7 @@ function DetailView({ sub, onBack, onDelete, onUpdate, isUpdating }: {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(sub.name);
   // If the stored team isn't in the standard list, treat it as a custom "Other" value
-  const STANDARD_TEAMS = ["Marketing","Merchandising","Design","Executive","HR","Sales","Other"];
+  const STANDARD_TEAMS = TEAMS; // shared with the public form, one list to maintain
   const [editTeam, setEditTeam] = useState(STANDARD_TEAMS.includes(sub.team) ? sub.team : "Other");
   const [editOtherTeam, setEditOtherTeam] = useState(STANDARD_TEAMS.includes(sub.team) ? "" : sub.team);
 
