@@ -357,8 +357,12 @@ embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
   the fixed width. Hover an edge, grab the handle, drag; the chosen width is
   remembered per browser, and the page widens/narrows with it.
 - **Each sidebar section's bottom edge resizes independently.** The Challenges
-  card's bottom edge caps the quote list (100–700px, scrolls inside when longer);
-  the comparison card's bottom edge sets the radar chart height (140–420px).
+  card's bottom edge sets the quote viewport (100–1200px, scrolls inside when
+  longer); the comparison card's bottom edge sets the radar chart height
+  (140–420px). The list always holds every quote, so dragging down keeps
+  revealing more — the old "Show all" toggle became redundant and was removed
+  (it also made the drag feel stuck: with only 4 quotes rendered, there was
+  nothing below to reveal).
   Every size is remembered per browser separately. The drag plumbing was
   consolidated into one `useDragSize` hook + `BottomHandle` component so future
   resizable sections are one line each.

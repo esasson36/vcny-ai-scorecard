@@ -923,10 +923,8 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
   monthLabel: string;
   onCollapse: () => void;
 }) {
-  const [showAll, setShowAll] = useState(false);
-
   // Each section's bottom edge resizes independently and remembers its size
-  const challengeBox = useDragSize("vcny-admin-sidebar-challenges-h", 320, 100, 700);
+  const challengeBox = useDragSize("vcny-admin-sidebar-challenges-h", 320, 100, 1200);
   const chartBox = useDragSize("vcny-admin-sidebar-chart-h", 195, 140, 420);
 
   const challengeItems = useMemo(() =>
@@ -941,7 +939,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
         tools: Object.keys(parseTools(s.tools)).filter(t => SIDEBAR_TOOL_DOT[t]),
       })),
     [subs]);
-  const visibleChallenges = showAll ? challengeItems : challengeItems.slice(0, 4);
+
 
   const allTeams = useMemo(() => [...new Set(subs.map(s => s.team))].filter(Boolean).sort(), [subs]);
   const subsA = subs.filter(s => s.team === teamA);
@@ -979,7 +977,7 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
         ) : (
           <>
             <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: challengeBox.size }}>
-              {visibleChallenges.map(c => (
+              {challengeItems.map(c => (
                 <div key={c.id} className="border-l-2 border-border pl-2.5">
                   <p className="text-[12.5px] leading-snug text-foreground/85">“{c.text}”</p>
                   <div className="flex items-center gap-1.5 mt-1">
@@ -996,13 +994,9 @@ function AdminSidebar({ subs, teamA, teamB, onChangeA, onChangeB, monthLabel, on
                 </div>
               ))}
             </div>
-            {challengeItems.length > 4 && (
-              <button onClick={() => setShowAll(v => !v)}
-                className="mt-3 text-[11px] uppercase tracking-[0.08em] text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                style={{ fontFamily: "'Geist Mono', monospace" }}>
-                {showAll ? "Show less" : `Show all ${challengeItems.length} →`}
-              </button>
-            )}
+            <p className="mt-2 text-[10px] text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>
+              {challengeItems.length} comment{challengeItems.length !== 1 ? "s" : ""} · drag the bottom edge to show more
+            </p>
           </>
         )}
         <BottomHandle onMouseDown={e => challengeBox.start(e)} />
