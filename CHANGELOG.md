@@ -351,6 +351,30 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-08-24 — Score-aware coaching tips (450-tip pools)
+
+The submit success screen's coaching tips are rebuilt around each tool's own
+score instead of the overall average (`client/src/lib/tips.ts`):
+
+- **Every team has a pool of 30 tool-specific tips** — 10 each for ChatGPT,
+  Claude, and Perplexity. 14 preset teams plus a General fallback = 450 tips,
+  each naming its tool, all unique, flavored to the team's actual work.
+- **5 tips, weighted toward the weakest tool.** Tools scoring 80%+ get none;
+  below that, weakest-first: one weak tool → all 5, two → 3/2 (the spec's
+  example: low Perplexity + decent Claude + good ChatGPT → 3 Perplexity, 2
+  Claude), three → 3/1/1. Each tip carries a small dot in its tool's color.
+- **Free-text team names keyword-match to a pool** ("people ops" → HR, "the QA
+  dept" → Quality Assurance & Compliance, "helpdesk" → IT); no match → General.
+  "accounting" deliberately does not match Sales despite containing "account".
+- **All tools 80%+ → a congratulations note instead**, drawn from 6 variants so
+  it doesn't feel canned.
+- Selection is **pseudo-random but seeded on name+month**: the same person sees
+  the same tips all month; different people see different ones. Scores are still
+  never shown — tips read as suggestions, not verdicts (the June rule).
+- The old 126-tip `TOOL_TIPS`/`getToolTips` system retired; the new module is
+  covered by unit checks (pool sizes, uniqueness, tool naming, allocation math,
+  keyword matching, determinism — all passing).
+
 ## 2026-08-24 — Resizable sidebar; every submitted team in the dropdowns
 
 - **The sidebar is now drag-resizable from either edge** (260–560px), replacing

@@ -1,7 +1,8 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, getToolTips, FEEDBACK_KEYS, FEEDBACK_TOOLS, FEEDBACK_COLOR, type ToolKey, type FeedbackKey, type MetricKey } from "@/lib/scorecard";
+import { TOOLS, TOOL_KEYS, TEAMS, LABELS, calcScore, FEEDBACK_KEYS, FEEDBACK_TOOLS, FEEDBACK_COLOR, type ToolKey, type FeedbackKey, type MetricKey } from "@/lib/scorecard";
+import { getScoredTips, type TipResult } from "@/lib/tips";
 import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ export default function SubmitPage() {
   const [nameError, setNameError] = useState(false);
   const [teamError, setTeamError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [tips, setTips] = useState<string[]>([]);
+  const [tipResult, setTipResult] = useState<TipResult | null>(null);
   const [dupWarning, setDupWarning] = useState("");
   const [dupChecked, setDupChecked] = useState(""); // "name|team" last checked
 
@@ -99,14 +100,20 @@ export default function SubmitPage() {
       feedback.plaude = cont ? { ...rest, continue: cont } : rest;
     }
 
-    // Tips are based only on the graded tools (feedback tools aren't graded)
+    // Coaching tips keyed off each tool's own score: tools under 80% get tips,
+    // weighted toward the weakest. Scores themselves are never shown. Seeded on
+    // name+month so the same person sees the same tips all month.
     if (activeTools.length > 0) {
-      const avgPct = Math.round(
-        activeTools.map(t => calcScore(scores[t]).pct).reduce((a, b) => a + b, 0) / activeTools.length
-      );
-      setTips(avgPct < 64 ? getToolTips(activeTools, effectiveTeam, 3) : []);
+      const toolPcts: Partial<Record<ToolKey, number>> = {};
+      activeTools.forEach(t => { toolPcts[t] = calcScore(scores[t]).pct; });
+      const month = new Date().toISOString().slice(0, 7);
+      setTipResult(getScoredTips({
+        toolPcts,
+        team: effectiveTeam,
+        seedKey: `${name.trim().toLowerCase()}|${month}`,
+      }));
     } else {
-      setTips([]);
+      setTipResult(null);
     }
 
     mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges, feedback });
@@ -115,31 +122,42 @@ export default function SubmitPage() {
   if (submitted) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className={cn("w-full text-center space-y-5 animate-fade-up", tips.length > 0 ? "max-w-md" : "max-w-sm")}>
+        <div className={cn("w-full text-center space-y-5 animate-fade-up", tipResult?.kind === "tips" ? "max-w-md" : "max-w-sm")}>
           <CheckCircle2 className="w-14 h-14 mx-auto animate-pop-in" style={{ color: "var(--good)" }} />
           <div>
             <h2 className="text-xl font-semibold" style={{ fontFamily: "'Fraunces', serif" }}>All done!</h2>
             <p className="text-sm text-muted-foreground mt-2">Your scorecard has been sent to Elie for review. Thanks!</p>
           </div>
 
-          {tips.length > 0 && (
+          {tipResult?.kind === "tips" && (
             <div className="text-left bg-card border border-border rounded-sm px-5 py-4 space-y-3 animate-fade-up" style={{ animationDelay: "120ms" }}>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: "'Geist Mono', monospace" }}>
                 A few ways to get even more from AI
               </p>
               <ul className="space-y-2">
-                {tips.map((tip, i) => (
+                {tipResult.items.map((tip, i) => (
                   <li key={i} className="flex gap-2.5 text-sm text-foreground/80">
-                    <span className="mt-0.5 shrink-0 text-muted-foreground">→</span>
-                    <span>{tip}</span>
+                    <span className="mt-1 shrink-0 w-2 h-2 rounded-full"
+                      style={{ background: { cgt: "#10a37f", cla: "#d97757", per: "#20808d" }[tip.tool] }}
+                      title={tip.toolName} />
+                    <span>{tip.text}</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
+          {tipResult?.kind === "congrats" && (
+            <div className="text-left bg-card border border-border rounded-sm px-5 py-4 animate-fade-up" style={{ animationDelay: "120ms" }}>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>
+                Nice work
+              </p>
+              <p className="text-sm text-foreground/80">{tipResult.message}</p>
+            </div>
+          )}
+
           <button
-            onClick={() => { setSubmitted(false); setTips([]); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); setFbSelected({ manifast: false, plaude: false }); setManifast({ ...DEFAULT_MANIFAST }); setPlaude({ ...DEFAULT_PLAUDE }); }}
+            onClick={() => { setSubmitted(false); setTipResult(null); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); setFbSelected({ manifast: false, plaude: false }); setManifast({ ...DEFAULT_MANIFAST }); setPlaude({ ...DEFAULT_PLAUDE }); }}
             className="text-sm border border-input rounded-sm px-5 py-2 hover:border-foreground hover:bg-foreground hover:text-background transition-all"
           >
             Submit another
