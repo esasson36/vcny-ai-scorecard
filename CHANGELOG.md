@@ -388,6 +388,7 @@ Six pre-September review items, all addressed.
   (submissions.email, submissions.deliverable, roster email backfill). The
   server tolerates either order: if the deploy lands first, submissions are
   accepted without the two new fields rather than being turned away.
+  Applied to production on 2026-09-08.
 
 ## 2026-08-24 — Score-aware coaching tips (450-tip pools)
 
