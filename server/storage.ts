@@ -27,6 +27,8 @@ export interface Row {
   month: string;
   notes: string | null;
   feedback: string | null;
+  email?: string | null;
+  deliverable?: string | null;
   archived_at?: string | null;
 }
 
@@ -42,6 +44,8 @@ function toSubmission(r: Row): Submission {
     month: r.month,
     notes: r.notes ?? "",
     feedback: r.feedback ?? "",
+    email: r.email ?? "",
+    deliverable: r.deliverable ?? "",
   };
 }
 
@@ -118,9 +122,18 @@ export const storage: IStorage = {
       month,
       notes: "",
       feedback: data.feedback ?? "",
+      email: data.email ?? "",
+      deliverable: data.deliverable ?? "",
     };
     const { error } = await supabase.from("submissions").insert(row);
-    if (error) throw error;
+    if (error) {
+      // The email/deliverable columns arrive with add-email-and-deliverable.sql.
+      // If the deploy lands first, retry without them rather than turning away a
+      // real submission — losing someone's answers is worse than losing two fields.
+      const { email, deliverable, ...legacy } = row;
+      const { error: legacyErr } = await supabase.from("submissions").insert(legacy);
+      if (legacyErr) throw error;
+    }
     return toSubmission(row);
   },
 

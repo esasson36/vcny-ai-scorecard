@@ -19,6 +19,9 @@ const DEFAULT_PLAUDE: PlaudeData = { rating: 5, timeSaved: 2, continue: "", reco
 
 export default function SubmitPage() {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState(false);
+  const [deliverable, setDeliverable] = useState("");
   const [team, setTeam] = useState("");
   const [otherTeam, setOtherTeam] = useState("");
   const [selected, setSelected] = useState<Record<ToolKey, boolean>>({ cgt: false, cla: false, per: false });
@@ -82,6 +85,11 @@ export default function SubmitPage() {
     setNameError(false);
     setTeamError(false);
     if (!name.trim()) { setNameError(true); setError("Please enter your name."); return; }
+    setEmailError(false);
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setEmailError(true); setError("Please enter your work email."); return;
+    }
     if (!team) { setTeamError(true); setError("Please select your team."); return; }
     if (team === "Other" && !otherTeam.trim()) { setTeamError(true); setError("Please enter your team name."); return; }
     const activeTools = TOOL_KEYS.filter(t => selected[t]);
@@ -110,13 +118,13 @@ export default function SubmitPage() {
       setTipResult(getScoredTips({
         toolPcts,
         team: effectiveTeam,
-        seedKey: `${name.trim().toLowerCase()}|${month}`,
+        seedKey: `${cleanEmail}|${month}`,
       }));
     } else {
       setTipResult(null);
     }
 
-    mutation.mutate({ name: name.trim(), team: effectiveTeam, tools, useCases, challenges, feedback });
+    mutation.mutate({ name: name.trim(), email: cleanEmail, team: effectiveTeam, tools, useCases, challenges, deliverable, feedback });
   }
 
   if (submitted) {
@@ -157,7 +165,7 @@ export default function SubmitPage() {
           )}
 
           <button
-            onClick={() => { setSubmitted(false); setTipResult(null); setName(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); setFbSelected({ manifast: false, plaude: false }); setManifast({ ...DEFAULT_MANIFAST }); setPlaude({ ...DEFAULT_PLAUDE }); }}
+            onClick={() => { setSubmitted(false); setTipResult(null); setName(""); setEmail(""); setDeliverable(""); setTeam(""); setOtherTeam(""); setUseCases(""); setChallenges(""); setSelected({ cgt: false, cla: false, per: false }); setScores({ cgt: { ...DEFAULT_SCORES }, cla: { ...DEFAULT_SCORES }, per: { ...DEFAULT_SCORES } }); setFbSelected({ manifast: false, plaude: false }); setManifast({ ...DEFAULT_MANIFAST }); setPlaude({ ...DEFAULT_PLAUDE }); }}
             className="text-sm border border-input rounded-sm px-5 py-2 hover:border-foreground hover:bg-foreground hover:text-background transition-all"
           >
             Submit another
@@ -224,6 +232,18 @@ export default function SubmitPage() {
                 placeholder="e.g. Sarah Chen"
                 className={cn("w-full px-3 py-2 border-[1.5px] rounded-sm text-sm bg-background text-foreground focus:outline-none transition-colors",
                   nameError ? "border-red-400 focus:border-red-500" : "border-input focus:border-foreground")}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">Work email</label>
+              <input
+                data-testid="input-email"
+                type="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); if (emailError) setEmailError(false); }}
+                placeholder="you@vcnyhome.com"
+                className={cn("w-full px-3 py-2 border-[1.5px] rounded-sm text-sm bg-background text-foreground focus:outline-none transition-colors",
+                  emailError ? "border-red-400 focus:border-red-500" : "border-input focus:border-foreground")}
               />
             </div>
             <div>
@@ -323,6 +343,19 @@ export default function SubmitPage() {
           <div className="flex items-center gap-3 mb-4">
             <span className="section-num">{(TOOL_KEYS.some(t => selected[t]) || FEEDBACK_KEYS.some(t => fbSelected[t])) ? "03" : "02"}</span>
             <h2 className="text-xl font-medium" style={{ fontFamily: "'Fraunces', serif" }}>In your own words</h2>
+          </div>
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">
+              Name one deliverable AI produced for you this month
+              <span className="normal-case text-muted-foreground/70"> — a file, an image, a report, a saved cost. The more specific, the better.</span>
+            </label>
+            <textarea
+              data-testid="input-deliverable"
+              value={deliverable}
+              onChange={e => setDeliverable(e.target.value)}
+              placeholder="e.g. 18 lifestyle images for the fall shoot — saved about $864 vs. a photoshoot"
+              className="w-full px-3 py-2 border-[1.5px] border-input rounded-sm text-sm bg-background text-foreground focus:border-foreground focus:outline-none transition-colors resize-y min-h-[60px]"
+            />
           </div>
           <div className="mb-4">
             <label className="block text-xs font-medium text-muted-foreground mb-1.5 tracking-[0.04em]">Top 1–3 use cases (what do you actually use these for?)</label>

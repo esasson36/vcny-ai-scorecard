@@ -98,7 +98,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (!result.success) {
       return res.status(400).json({ error: result.error.flatten() });
     }
-    const { name, team, tools, useCases, challenges, feedback } = result.data;
+    const { name, team, tools, useCases, challenges, feedback, email, deliverable } = result.data;
     const hasFeedback = feedback && (feedback.manifast || feedback.plaude);
     // A submission must have at least one graded tool OR some feedback
     if (Object.keys(tools).length === 0 && !hasFeedback) {
@@ -108,6 +108,16 @@ export function registerRoutes(httpServer: Server, app: Express) {
     // different case (e.g. "AI" vs "ai"), reuse the existing casing so we never
     // create a duplicate team that differs only by capitalization. The standard
     // dropdown teams take priority so free-text "hr" snaps to "HR".
+    // Identity is keyed on email: if the address matches someone on the roster,
+    // their roster name is stored regardless of how they typed it ("yael",
+    // "Jane yang"), so months and streaks join cleanly across months.
+    let canonicalName = name.trim();
+    try {
+      const roster = await storage.getRoster();
+      const match = roster.find(r => r.email && r.email.toLowerCase().trim() === email);
+      if (match) canonicalName = match.fullName;
+    } catch { /* roster unavailable — keep the typed name */ }
+
     const STANDARD_TEAMS = ["AI", "Brands", "Design", "Executive", "HR", "IT", "Marketing",
       "Merchandising", "Operations", "Packaging", "Pet Production", "Production",
       "Quality Assurance & Compliance", "Sales"];
@@ -118,7 +128,9 @@ export function registerRoutes(httpServer: Server, app: Express) {
     const candidates = [...existingTeams, ...STANDARD_TEAMS];
     const canonicalTeam = candidates.find(t => t.toLowerCase().trim() === team.toLowerCase().trim()) ?? team.trim();
     const submission = await storage.createSubmission({
-      name,
+      name: canonicalName,
+      email,
+      deliverable: deliverable ?? "",
       team: canonicalTeam,
       tools: JSON.stringify(tools),
       useCases: useCases ?? "",
@@ -261,6 +273,8 @@ export function registerRoutes(httpServer: Server, app: Express) {
         month: str((r as any).month, 7) || timestamp.slice(0, 7),
         notes: str((r as any).notes, 5000),
         feedback: str((r as any).feedback, 20000),
+        email: str((r as any).email, 200),
+        deliverable: str((r as any).deliverable, 5000),
         archived_at: typeof (r as any).archived_at === "string" && (r as any).archived_at
           ? (r as any).archived_at
           : null,

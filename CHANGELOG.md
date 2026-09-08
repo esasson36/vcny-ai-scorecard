@@ -351,6 +351,44 @@ adds an off-database copy that can be loaded straight back in.
 **Verified:** full Excel round-trip (export → re-read → server sanitiser) preserves
 embedded quotes, commas, newlines, nested tool JSON, and the archived flag.
 
+## 2026-09-08 — September prep: identity by email, outcome question, report fixes
+
+Six pre-September review items, all addressed.
+
+1. **Identity is now keyed on work email, not free-text names.** The form
+   requires a work email; the server resolves it against the roster and stores
+   the roster spelling of the name regardless of what was typed ("yael",
+   "Jane yang"). Months and streaks join on email where present (all rows from
+   September on), falling back to normalised names for August. Fixed before
+   month two, while every Months/Streak column still reads 1.
+2. **Roster emails backfilled.** `migrations/add-email-and-deliverable.sql`
+   fills 33 addresses derived from the August 19 announcement's recipient list —
+   all 24 matched submitters plus the 9 non-respondents — and sets Lisa Brier's
+   team (HR, from her signature). Deliberately NOT set: Sukhdeep Singh
+   (SChhatwal@ may or may not be him) and Toby Joe Cohen (tcohen@ vs the CEO's
+   tobycohen@) — confirm by hand. Teams for the other 8 non-respondents still
+   need filling in.
+3. **Report cost-table total row fixed** — $18,720/yr was rendering under the
+   ROI column. Yearly spend now has its own labelled row.
+4. **Rank numbers now agree between the workbook and the report.** Both skip
+   the scorecard owner when numbering (Maria = 25 in both); the owner appears
+   in the workbook unranked ("—").
+5. **Seat governance is visible and validated.** The report's cost section
+   prints each subscription's billing owner and as-of date, with blanks shown
+   in red; export raises a warning when either is missing. A single named owner
+   with no date is a single point of failure with no offboarding path.
+6. **The outcome question is on the form**: "Name one deliverable AI produced
+   for you this month", with Deepali's $864 photoshoot saving as the example
+   placeholder. Stored per submission, shown in the detail view, included in
+   Raw Data and backups, and the report gains a "Deliverables Named This Month"
+   section that appears once any exist. Scoring dimensions unchanged —
+   comparability with August survives.
+
+- **Migration required:** `migrations/add-email-and-deliverable.sql`
+  (submissions.email, submissions.deliverable, roster email backfill). The
+  server tolerates either order: if the deploy lands first, submissions are
+  accepted without the two new fields rather than being turned away.
+
 ## 2026-08-24 — Score-aware coaching tips (450-tip pools)
 
 The submit success screen's coaching tips are rebuilt around each tool's own

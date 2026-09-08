@@ -19,6 +19,12 @@ export const submissions = sqliteTable("submissions", {
   // JSON: feedback for non-graded evaluation tools (Manifast, Plaude). Stored
   // separately from `tools` so it never touches the A–F grading pipeline.
   feedback: text("feedback").default(""),
+  // The durable identity key. Names are free text and drift between months
+  // ("yael" vs "Yael Chamay"); email is what trend tracking joins on.
+  email: text("email").default(""),
+  // The outcome question: "Name one deliverable AI produced for you this month."
+  // Evidence of value, where the four score dimensions only measure usage.
+  deliverable: text("deliverable").default(""),
 });
 
 export const insertSubmissionSchema = createInsertSchema(submissions).omit({
@@ -60,10 +66,12 @@ export const feedbackSchema = z.object({
 
 export const submitBodySchema = z.object({
   name: z.string().min(1).max(100),
+  email: z.string().trim().toLowerCase().email().max(200),
   team: z.string().min(1).max(60),
   tools: z.record(z.enum(["cgt", "cla", "per"]), toolScoreSchema),
   useCases: z.string().max(2000).optional(),
   challenges: z.string().max(2000).optional(),
+  deliverable: z.string().max(2000).optional(),
   feedback: feedbackSchema.optional(),
 });
 

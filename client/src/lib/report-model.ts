@@ -47,7 +47,8 @@ export const METHODOLOGY_NOTES = [
   "People are ranked on their best tool. Averaging across tools penalises holding an unused seat, which is a seat-allocation issue rather than an adoption one.",
   "Team grades are suppressed where fewer than three people responded.",
   "Unmanaged-account findings come from keyword matching over free text and require human confirmation before they are treated as fact.",
-  "Open for September: consider replacing one scoring dimension with an outcome question, e.g. name one deliverable this tool produced this month.",
+  "Since September 2026 the form asks for one concrete deliverable AI produced that month — outcome evidence to weigh against the usage-based score.",
+  "Identity is keyed on work email (collected since September 2026); earlier rows fall back to normalised names.",
 ];
 
 // ── Seat actions (CH-04) ────────────────────────────────────────────────────
@@ -182,6 +183,8 @@ export interface ToolRollup {
   paidSeats: number | null;
   unmeasuredSeats: number | null;
   costPerSeat: number | null;
+  billingOwner: string;
+  asOf: string;
   monthlySpend: number | null;
   unmeasuredSpend: number | null;
   monthlyHours: number;
@@ -289,6 +292,8 @@ export function buildReportModel(input: ModelInputs) {
       paidSeats,
       unmeasuredSeats,
       costPerSeat,
+      billingOwner: seat?.billingOwner ?? "",
+      asOf: seat?.asOf ?? "",
       monthlySpend,
       unmeasuredSpend: unmeasuredSeats != null && costPerSeat != null
         ? unmeasuredSeats * costPerSeat : null,
@@ -446,6 +451,17 @@ export function validateModel(m: Omit<ReportModel, "validations">): Validation[]
     if (alloc - cap > 0.01) {
       v.push({ id: `alloc-exceeds-cap-${p.name}`, level: "error",
         message: `${p.name}: allocated ${alloc.toFixed(2)} hrs/wk exceeds their highest single claim of ${cap}.` });
+    }
+  });
+
+  // Seat governance (fix #5): a subscription with no named owner or no as-of
+  // date is a single point of failure with no offboarding path. The report
+  // prints both, so blanks would ship visibly — warn at export instead.
+  m.toolRollups.forEach(t => {
+    if (t.paidSeats == null) return; // missing seats is already a blocking error
+    if (!t.billingOwner || !t.asOf) {
+      v.push({ id: `seat-governance-${t.tool}`, level: "warning",
+        message: `${t.toolName}: seat record is missing ${!t.billingOwner ? "a billing owner" : ""}${!t.billingOwner && !t.asOf ? " and " : ""}${!t.asOf ? "an as-of date" : ""}. Fill both in Settings → Report inputs — no owner means no offboarding path.` });
     }
   });
 

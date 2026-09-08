@@ -86,9 +86,24 @@ function isConsecutiveMonth(a: string, b: string): boolean {
 
 // Consecutive months a person submitted, counting back from their latest submission.
 // e.g. submitted Apr, May, Jun → 3; missed May → streak breaks.
-function computeStreak(name: string, allSubs: Submission[]): number {
-  const target = resolveName(name);
-  const months = [...new Set(allSubs.filter(s => resolveName(s.name) === target).map(getMonth))].filter(Boolean).sort();
+/**
+ * The identity key for joining one person across months. Email when we have it
+ * (collected since September 2026), resolved name as the fallback for older
+ * rows. Free-text names drift between months; emails don't.
+ */
+function personKey(sub: Pick<Submission, "name" | "email">): string {
+  const e = (sub.email ?? "").trim().toLowerCase();
+  return e || resolveName(sub.name).toLowerCase();
+}
+
+function computeStreak(ref: string | Pick<Submission, "name" | "email">, allSubs: Submission[]): number {
+  // Callers that only have a display name get their email looked up from any
+  // submission that resolves to the same person, so the join still uses email.
+  const sub = typeof ref === "string"
+    ? allSubs.find(x => resolveName(x.name) === resolveName(ref)) ?? { name: ref, email: "" }
+    : ref;
+  const target = personKey(sub);
+  const months = [...new Set(allSubs.filter(s => personKey(s) === target).map(getMonth))].filter(Boolean).sort();
   if (!months.length) return 0;
   let streak = 1;
   for (let i = months.length - 1; i > 0; i--) {
@@ -303,15 +318,19 @@ export default function AdminPanel({ onLogout }: Props) {
     // someone for holding a seat they never use, which is a seat-allocation
     // problem rather than an adoption one.
     const monthsBy = new Map<string, Set<string>>();
-    filteredSubs.forEach(sub => {
+    subs.forEach(sub => {
       const n = resolveName(sub.name);
       if (!monthsBy.has(n)) monthsBy.set(n, new Set());
       monthsBy.get(n)!.add(getMonth(sub));
     });
     const lbRows: (string | number)[][] = [["Rank", "Name", "Team", "Best Tool", "Best Tool %",
       "Grade", "Seats Held", "Unused Seats", "Portfolio Avg % (reference only)", "Months", "Streak"]];
-    model.ranked.forEach((p, i) => {
-      lbRows.push([i + 1, p.name + (p.isOwner ? " (scorecard owner)" : ""), p.team,
+    // Rank numbers skip the scorecard owner so they match the report, which
+    // excludes them. The owner still appears, unranked. (Fix #4: the report said
+    // Maria = 25 while this sheet said 26.)
+    let lbRank = 0;
+    model.ranked.forEach(p => {
+      lbRows.push([p.isOwner ? "—" : ++lbRank, p.name + (p.isOwner ? " (scorecard owner)" : ""), p.team,
         p.bestTool, p.bestPct, p.grade, p.seatsHeld, p.unusedSeats,
         p.portfolioAvgPct, monthsBy.get(p.name)?.size ?? 0, computeStreak(p.name, subs)]);
     });
@@ -445,11 +464,11 @@ export default function AdminPanel({ onLogout }: Props) {
     // own column names. The other sheets are calculated views and can't be loaded
     // back; this one can — Settings → Backup & restore reads exactly this sheet.
     const rawRows: (string | number)[][] = [["id", "name", "team", "tools", "use_cases",
-      "challenges", "timestamp", "month", "notes", "feedback", "archived_at"]];
+      "challenges", "timestamp", "month", "notes", "feedback", "email", "deliverable", "archived_at"]];
     subs.forEach(sub => {
       rawRows.push([sub.id, sub.name, sub.team, sub.tools, sub.useCases ?? "",
         sub.challenges ?? "", sub.timestamp, getMonth(sub), sub.notes ?? "",
-        sub.feedback ?? "", ""]);
+        sub.feedback ?? "", sub.email ?? "", sub.deliverable ?? "", ""]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rawRows), RAW_SHEET);
 
@@ -601,6 +620,7 @@ ${(() => {
   const money = (n: number) => "$" + Math.round(n).toLocaleString();
   return `${sectionHead("Cost &amp; ROI &middot; " + esc(monthLabel))}
 <p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">Spend is modelled from paid seats, not survey respondents. Hours saved are ${HOURS_CAVEAT}, valued at $${hourlyRate}/hr (unloaded wage, not fully-loaded cost).</p>
+<p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">${seats.map(sr => `${esc(TOOLS[sr.tool])}: billing owner ${sr.billingOwner ? esc(sr.billingOwner) : "<b style=\"color:#cc2222\">not set</b>"}, as of ${sr.asOf ? esc(sr.asOf) : "<b style=\"color:#cc2222\">no date</b>"}`).join(" &nbsp;&middot;&nbsp; ")}</p>
 <table style="margin-bottom:10pt">
   <thead><tr>
     <th>Tool</th><th>Paid Seats</th><th>Measured</th><th>Unmeasured</th><th>Monthly Spend</th><th>Unmeasured Spend</th><th>Hrs/Mo</th><th>Value/Mo</th><th>ROI</th>
@@ -623,7 +643,12 @@ ${(() => {
       <td style="font-weight:bold;color:#cc2222">${money(model.totals.unmeasuredSpend)}</td>
       <td style="text-align:center;font-weight:bold">${Math.round(model.totals.monthlyHours)}</td>
       <td style="font-weight:bold">${money(model.totals.monthlyValue)}</td>
-      <td style="color:#888888;font-size:9pt">${money(model.totals.yearlySpend)}/yr</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4" style="color:#888888;font-size:9pt">Projected yearly spend</td>
+      <td style="color:#888888;font-size:9pt;font-weight:bold">${money(model.totals.yearlySpend)}/yr</td>
+      <td colspan="4"></td>
     </tr>
   </tbody>
 </table>
@@ -656,6 +681,23 @@ ${model.revocations.length ? `${sectionHead("Seats To Revoke")}
     </tr>
   </tbody>
 </table>` : ""}`;
+})()}
+
+${(() => {
+  const delivs = filteredSubs
+    .filter(d => (d.deliverable ?? "").trim())
+    .map(d => ({ name: resolveName(d.name), team: d.team, text: (d.deliverable ?? "").trim() }));
+  if (!delivs.length) return "";
+  return `${sectionHead("Deliverables Named This Month")}
+<p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">What people say AI actually produced — outcome evidence, verbatim and unverified.</p>
+<table style="margin-bottom:14pt">
+  <thead><tr><th style="width:20%">Name</th><th style="width:16%">Team</th><th>Deliverable</th></tr></thead>
+  <tbody>${delivs.map(d => `<tr>
+      <td style="font-weight:bold">${esc(d.name)}</td>
+      <td style="color:#666666">${esc(d.team)}</td>
+      <td style="font-size:9.5pt">${esc(d.text)}</td>
+    </tr>`).join("")}</tbody>
+</table>`;
 })()}
 
 ${sectionHead("Methodology &amp; Limitations")}
@@ -1254,7 +1296,7 @@ function DashView({ subs, allSubs, allMonths, selectedMonth, onMonthChange, onOp
               .sort((a, b) => getMonth(b).localeCompare(getMonth(a)))[0];
             const delta = graded && prevSub != null ? subOverallPct(sub) - subOverallPct(prevSub) : null;
             const overallG = pctToGrade(subOverallPct(sub));
-            const streak = computeStreak(sub.name, allSubs);
+            const streak = computeStreak(sub, allSubs);
             return (
               <div key={sub.id} onClick={() => onOpen(sub.id)}
                 className="card-lift animate-fade-up bg-card border border-border rounded-sm px-4 py-3.5 hover:border-foreground/30 cursor-pointer"
@@ -1878,6 +1920,12 @@ function DetailView({ sub, onBack, onDelete, onUpdate, isUpdating }: {
           <div className="mt-5 pt-5 border-t border-border">
             <label className="block text-xs font-medium text-muted-foreground mb-1.5">Top use cases</label>
             <p className="text-sm">{sub.useCases}</p>
+          </div>
+        )}
+        {sub.deliverable && (
+          <div className="bg-card border border-border rounded-sm p-5 mb-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2" style={{ fontFamily: "'Geist Mono', monospace" }}>Deliverable this month</h3>
+            <p className="text-sm">{sub.deliverable}</p>
           </div>
         )}
         {sub.challenges && (
@@ -3047,7 +3095,7 @@ function BackupRestore() {
 
       // Verbatim rows — this is the sheet a restore reads back
       const cols = ["id", "name", "team", "tools", "use_cases", "challenges",
-        "timestamp", "month", "notes", "feedback", "archived_at"];
+        "timestamp", "month", "notes", "feedback", "email", "deliverable", "archived_at"];
       const rows: (string | number)[][] = [cols];
       (snap.submissions ?? []).forEach((r: Record<string, unknown>) => {
         rows.push(cols.map(c => (r[c] == null ? "" : String(r[c]))));
