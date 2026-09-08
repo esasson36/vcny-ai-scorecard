@@ -373,12 +373,14 @@ Six pre-September review items, all addressed.
    the table: Toby Cohen (Executive), Eddie Halwani (`ehelwani@` — the address
    spells "helwani" though the name is "Halwani"), and Albert Sasson
    (`Asasson@`). Headcount rises by three, all non-respondents.
+   Applied to production on 2026-09-08.
 
    **Round 3** (`migrations/fix-sukhdeep-chhatwal.sql`): Sukhdeep's surname is
    **Chhatwal**, not Singh — the August submission was a mix-up with Samantha
    Singh, which is why `SChhatwal@` never matched. His roster entry and
    submission are corrected, and `NAME_ALIASES` maps the old spelling so a
    repeat mistype still resolves. Every submitted name now has an email.
+   Applied to production on 2026-09-08.
 
    Still open: teams for the non-respondents.
 
