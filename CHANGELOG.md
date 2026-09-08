@@ -364,10 +364,18 @@ Six pre-September review items, all addressed.
 2. **Roster emails backfilled.** `migrations/add-email-and-deliverable.sql`
    fills 33 addresses derived from the August 19 announcement's recipient list —
    all 24 matched submitters plus the 9 non-respondents — and sets Lisa Brier's
-   team (HR, from her signature). Deliberately NOT set: Sukhdeep Singh
-   (SChhatwal@ may or may not be him) and Toby Joe Cohen (tcohen@ vs the CEO's
-   tobycohen@) — confirm by hand. Teams for the other 8 non-respondents still
-   need filling in.
+   team (HR, from her signature). Applied to production on 2026-09-08.
+
+   **Round 2** (`migrations/roster-emails-round2.sql`, same day): Toby Joe Cohen
+   (Pet Production) is `tcohen@`, confirmed by Elie and cross-checked — the
+   `tobycohen@` account sends as display name "Toby Cohen" and is the CEO. Added
+   three roster entries that were on the August recipient list but absent from
+   the table: Toby Cohen (Executive), Eddie Halwani (`ehelwani@` — the address
+   spells "helwani" though the name is "Halwani"), and Albert Sasson
+   (`Asasson@`). Headcount rises by three, all non-respondents.
+
+   Still open: **Sukhdeep Singh** — the recipient list offers `SChhatwal@`,
+   which may not be him. Teams for the non-respondents still need filling in.
 3. **Report cost-table total row fixed** — $18,720/yr was rendering under the
    ROI column. Yearly spend now has its own labelled row.
 4. **Rank numbers now agree between the workbook and the report.** Both skip

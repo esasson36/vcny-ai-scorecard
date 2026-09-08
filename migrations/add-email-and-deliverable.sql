@@ -80,10 +80,9 @@ WHERE lower(trim(submissions.name)) = v.name AND submissions.email = '';
 
 -- ── NOT backfilled — resolve these by hand ───────────────────────────────────
 -- Sukhdeep Singh:  the recipient list has SChhatwal@vcnyhome.com, which may or
---                  may not be him. Confirm before setting.
--- Toby Joe Cohen:  both tcohen@ and tobycohen@ exist; tobycohen@ is presumably
---                  the CEO. Confirm which belongs to the Pet Production Toby.
--- ehelwani@ / Asasson@: recipients with no matching roster name yet.
+--                  may not be him. Confirm before setting. STILL OPEN.
+-- Toby, Eddie Halwani, Albert Sasson: resolved 2026-09-08 in
+--                  migrations/roster-emails-round2.sql.
 
 -- Check: who's still missing an email?
 --   SELECT name FROM employees WHERE email = '' AND active;
