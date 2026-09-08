@@ -374,8 +374,22 @@ Six pre-September review items, all addressed.
    spells "helwani" though the name is "Halwani"), and Albert Sasson
    (`Asasson@`). Headcount rises by three, all non-respondents.
 
-   Still open: **Sukhdeep Singh** — the recipient list offers `SChhatwal@`,
-   which may not be him. Teams for the non-respondents still need filling in.
+   **Round 3** (`migrations/fix-sukhdeep-chhatwal.sql`): Sukhdeep's surname is
+   **Chhatwal**, not Singh — the August submission was a mix-up with Samantha
+   Singh, which is why `SChhatwal@` never matched. His roster entry and
+   submission are corrected, and `NAME_ALIASES` maps the old spelling so a
+   repeat mistype still resolves. Every submitted name now has an email.
+
+   Still open: teams for the non-respondents.
+
+5. **Billing disclosure written (item 5).** `BILLING_DISCLOSURES` in
+   `report-model.ts` — one editable place — is printed in the report's cost
+   section under a "Disclosure" rule: the subscriptions are billed to Albert
+   Sasson's personal card, he is the scorecard author's father, the author has
+   delegated add/remove authority conditional on notifying him, and the
+   personal-card arrangement is named as a single point of failure sitting
+   outside procurement records with no documented transfer path. Stated the same
+   way as the author's own leaderboard exclusion.
 3. **Report cost-table total row fixed** — $18,720/yr was rendering under the
    ROI column. Yearly spend now has its own labelled row.
 4. **Rank numbers now agree between the workbook and the report.** Both skip

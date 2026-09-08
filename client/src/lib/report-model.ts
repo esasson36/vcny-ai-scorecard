@@ -51,6 +51,20 @@ export const METHODOLOGY_NOTES = [
   "Identity is keyed on work email (collected since September 2026); earlier rows fall back to normalised names.",
 ];
 
+/**
+ * Related-party and billing disclosures, printed in the report's cost section.
+ *
+ * The reviewer's point stands: a subscription owned by one named individual, on
+ * a personal card, with this scorecard's author as the person who provisions
+ * access, is worth stating plainly rather than leaving a reader to work out.
+ * Edit the wording here — this is the only place it lives.
+ */
+export const BILLING_DISCLOSURES = [
+  "All three AI subscriptions are billed to a personal credit card belonging to Albert Sasson, who is the father of Elie Sasson, the author of this scorecard.",
+  "Elie Sasson holds delegated authority to add or remove users on all three tools, conditional on notifying Albert Sasson first. Elie is also excluded from the ranked leaderboard in this report.",
+  "Because billing sits on a personal card rather than a company account, the subscriptions are a single point of failure: they fall outside company procurement records, and there is no documented path to transfer or cancel them if that person is unavailable. Moving them to a company payment method and naming a backup administrator would close both gaps.",
+];
+
 // ── Seat actions (CH-04) ────────────────────────────────────────────────────
 // Keyed off each tool's own score, never off a person's aggregate. "Cancel this
 // seat" and "coach this person" are different questions and need different inputs.
@@ -71,6 +85,10 @@ export const NAME_ALIASES: Record<string, string> = {
   // are safe as keys while each is unique in the company; if a second Samantha
   // ever joins, replace the bare key with something the form can distinguish.
   "samantha": "Samantha Singh",
+  // Filed as "Sukhdeep Singh" in August — a mix-up with Samantha Singh. His
+  // surname is Chhatwal (SChhatwal@vcnyhome.com), corrected in the data by
+  // migrations/fix-sukhdeep-chhatwal.sql; the alias catches a repeat mistype.
+  "sukhdeep singh": "Sukhdeep Chhatwal",
   "yara": "Yara Barot",
   "yael": "Yael Chamay",
 };

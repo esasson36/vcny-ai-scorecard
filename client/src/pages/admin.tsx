@@ -9,7 +9,7 @@ import {
 } from "@/lib/scorecard";
 import {
   buildReportModel, resolveName, normalizeName, TIME_HOURS, WEEKS_PER_MONTH, HOURS_CAVEAT,
-  METHODOLOGY_NOTES, SEAT_ACTION_BANDS,
+  METHODOLOGY_NOTES, SEAT_ACTION_BANDS, BILLING_DISCLOSURES,
   type RosterEntry, type SeatRecord, type ReportModel,
 } from "@/lib/report-model";
 import { LogOut, RefreshCw, Trash2, ArrowLeft, Printer, Inbox, Plus, Minus } from "lucide-react";
@@ -621,6 +621,7 @@ ${(() => {
   return `${sectionHead("Cost &amp; ROI &middot; " + esc(monthLabel))}
 <p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">Spend is modelled from paid seats, not survey respondents. Hours saved are ${HOURS_CAVEAT}, valued at $${hourlyRate}/hr (unloaded wage, not fully-loaded cost).</p>
 <p style="font-size:8.5pt;color:#888888;margin-bottom:8pt">${seats.map(sr => `${esc(TOOLS[sr.tool])}: billing owner ${sr.billingOwner ? esc(sr.billingOwner) : "<b style=\"color:#cc2222\">not set</b>"}, as of ${sr.asOf ? esc(sr.asOf) : "<b style=\"color:#cc2222\">no date</b>"}`).join(" &nbsp;&middot;&nbsp; ")}</p>
+<p style="font-size:8.5pt;color:#666666;margin-bottom:8pt;padding:6pt 8pt;border-left:2pt solid #cccccc"><b>Disclosure.</b> ${BILLING_DISCLOSURES.map(d => esc(d)).join("<br>")}</p>
 <table style="margin-bottom:10pt">
   <thead><tr>
     <th>Tool</th><th>Paid Seats</th><th>Measured</th><th>Unmeasured</th><th>Monthly Spend</th><th>Unmeasured Spend</th><th>Hrs/Mo</th><th>Value/Mo</th><th>ROI</th>
